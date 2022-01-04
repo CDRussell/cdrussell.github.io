@@ -2,10 +2,6 @@
 layout: default
 title: "Craig Russell Technical Blog"
 ---
-# Hello World
-
-Rumblings of a new blog post.
-
 
 <h1>Latest Posts</h1>
 <ul>
