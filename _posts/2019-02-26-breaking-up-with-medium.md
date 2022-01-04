@@ -5,6 +5,7 @@ description: "Medium. We need to talk. \U0001F494"
 list_image: /images/heartbreak.jpg
 title: Breaking Up With Medium
 permalink: 2019/02/breaking-up-with-medium/
+canonical_url: https://medium.com/@trionkidnapper/breaking-up-with-medium-e755589b074a
 ---
 
 Medium. We need to talk. 💔

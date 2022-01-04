@@ -13,6 +13,7 @@ keywords:
   - dispatchers
 title: Launching a Kotlin Coroutine for immediate execution on the Main thread
 permalink: 2019/02/launching-a-kotlin-coroutine-for-immediate-execution-on-the-main-thread/
+canonical_url: https://medium.com/@trionkidnapper/launching-a-kotlin-coroutine-for-immediate-execution-on-the-main-thread-8555e701163b
 ---
 
 If you launch a coroutine using `launch(Dispatchers.Main)` while already on the main thread, will the code execute immediately?
