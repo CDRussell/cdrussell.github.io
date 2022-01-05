@@ -5,7 +5,7 @@ title: "About Craig Russell"
 
 
 # Contacting Me ✍️
-The best way to get in touch is via Twitter [@trionkidnapper](https://twitter.com/trionkidnapper). I’m always happy for folks to reach out and say hi 👋.
+The best way to get in touch is via Twitter [@trionkidnapper](https://twitter.com/trionkidnapper). I’m always happy for folks to reach out and say hi.
 
 <br/>
 
