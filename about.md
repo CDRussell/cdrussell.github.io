@@ -39,8 +39,8 @@ This app, used by millions, exists to do good in the world. Did you know it’s 
 ### Building the browser
   - Joined DuckDuckGo in 2017
   - Brought in to **build and launch a brand new** Android app, DuckDuckGo Privacy Browser. 
-  - Started the app from scratch in 2017. The thrill of `File -> New Project` 🎉
-  - Highly regarded by millions of real users. 📈
+  - The app was **built from scratch** in 2017. The thrill of `File -> New Project` 🎉
+  - Highly regarded by **millions of real users**. 📈
   - **Key initial responsibilities** were, basically, _everything_. 😅
     - From creation of app architecture, configuring automated testing, release process, to all the initial features required for a v1 Browser launch in February 2018, getting the app released and into the hands of real users. 
     - And then iterating on the browser since. 🔁
@@ -59,7 +59,7 @@ It's refreshing how much users like it. 😍
 
 ### App Tracking Protection
 - More recently, **technical lead** of [App Tracking Protection](https://spreadprivacy.com/introducing-app-tracking-protection/), a solution for blocking trackers lurking in all the other apps installed on your Android device. App Tracking Protection is now built right into the standard [DuckDuckGo Privacy Browser](https://play.google.com/store/apps/details?id=com.duckduckgo.mobile.android)
-    - **Key responsibilities**: Responsible for building and launching App Tracking Protection, from building initial proof of concept, prototyping, user testing through to landing the feature in the production app
+- **Key responsibilities**: Responsible for building and launching App Tracking Protection, from building initial proof of concept, prototyping, user testing through to landing the feature in the production app
 
 ### Growing the Team
 - From an initial team of 3 mobile devs, we've been steadily growing over the years. We're now 20+ strong in our team
