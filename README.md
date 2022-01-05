@@ -1,5 +1,5 @@
 # Blog using GitHub Static Pages with Jekyll
-This is a repo used to generate https://cdrussell.github.io
+This is a repo used to generate https://craigrussell.io
 
 ## Building locally
 - `jekyll serve`
