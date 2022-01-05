@@ -12,6 +12,7 @@ list_image: /images/multiple-ssh-keys-padlocks.jpeg
 layout: post
 
 permalink: 2016/08/ssh-keys-with-multiple-github-accounts/
+canonical_url: https://medium.com/@trionkidnapper/ssh-keys-with-multiple-github-accounts-c67db56f191e
 ---
 
 This article explains how to manage multiple SSH keys for different GitHub.com accounts so that you can access multiple accounts and projects, each with different credentials.
