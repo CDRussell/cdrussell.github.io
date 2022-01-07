@@ -2,7 +2,7 @@
 layout: post
 date: 2019-02-26 01:00:00
 title: Scripting with Kotlin - Kscript
-description: This post discusses kscript, an easy way to write and execute scripts in Kotlin. This post covers what kscript is, how to install it on a Mac, and offers some kscript examples.
+description: kscript, an easy way to write and execute scripts in Kotlin. This post covers what kscript is, how to install it on a Mac, and offers some kscript examples.
 permalink: 2019/02/scripting-with-kotlin-kscript/
 ---
 

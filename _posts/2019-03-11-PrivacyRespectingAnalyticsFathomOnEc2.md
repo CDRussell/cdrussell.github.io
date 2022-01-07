@@ -2,7 +2,7 @@
 layout: post
 title: "Installing Fathom Analytics on Amazon EC2"
 date: 2019-03-15T02:03:53Z
-description: This post describes how to install the privacy-focussed Fathom website analytics on an Amazon EC2 instance.
+description: How to install the privacy-focussed Fathom website analytics on an Amazon EC2 instance.
 keywords: 
   - fathom
   - analytics

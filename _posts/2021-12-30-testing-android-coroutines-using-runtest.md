@@ -2,7 +2,7 @@
 layout: post
 title: Testing Android Coroutines using runTest
 date: 2021-12-07 01:05 +0000
-description: This post describes the latest tooling to help test Android Coroutines, provided as part of the kotlinx.coroutines test libraries, which aim to “provide utilities for efficiently testing coroutines”.
+description: The latest tooling to help test Android Coroutines, provided as part of the kotlinx.coroutines test libraries, which aim to “provide utilities for efficiently testing coroutines”.
 permalink: 2021/12/testing-android-coroutines-using-runtest/
 ---
 

@@ -2,7 +2,7 @@
 layout: post
 title: "A WorkManager Pitfall: Modifying a Scheduled Worker"
 date: 2019-04-24T00:59:50+01:00
-description: This post describes a potential WorkManager pitfall when refactoring or deleting your Worker subclasses.
+description: A potential WorkManager pitfall when refactoring or deleting your Worker subclasses.
 keywords:
   - Android
   - WorkManager

@@ -1,7 +1,7 @@
 ---
 layout: post
 title: "Preventing coroutine cancellation for important actions"
-description: This post describes a pattern of launching coroutines which cancel when the Activity or ViewModel is destroyed, but support allowing important parts of the coroutine to run uncancelled.
+description: A pattern for launching coroutines which cancel when the Activity or ViewModel is destroyed, but support allowing important parts of the coroutine to run uncancelled.
 
 date: 2020-03-11
 permalink: 2020/03/preventing-coroutine-cancellation-for-important-actions/

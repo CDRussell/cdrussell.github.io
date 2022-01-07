@@ -2,7 +2,7 @@
 layout: post
 date: 2019-03-02
 title: Shooting Yourself in the Foot While Adding an Element to a Kotlin List
-description: This post discusses the functions `add()` and `plus()` which are available on some Kotlin collections, and how despite their similar looking names, their underlying implementations can make a big difference.
+description: The functions `add()` and `plus()` which are available on some Kotlin collections, and how despite their similar looking names, their underlying implementations can make a big difference.
 keywords:
   - kotlin
   - add
