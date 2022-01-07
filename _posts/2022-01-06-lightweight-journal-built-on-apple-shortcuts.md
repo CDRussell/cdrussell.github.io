@@ -1,7 +1,7 @@
 ---
 layout: post
 title: Lightweight Journal Built on Apple Shortcuts
-date: 2022-01-06 16:29 +0000
+date: 2022-01-07
 description: Building a journaling tool using Apple Shortcuts and Notes
 ---
 _This post details how to use **Apple Shortcuts** to build a lightweight journal to log events, which are timestamped and saved to **Apple Notes**._
