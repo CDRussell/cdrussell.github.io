@@ -9,13 +9,7 @@ permalink: 2020/03/preventing-coroutine-cancellation-for-important-actions/
 list_image: /images/keepcalm.jpg
 
 categories:
-  - coroutine
-  - NonCancellable
-  - kotlin
-  - cancelling coroutines
-  - extend coroutine scope
-  - coroutine lifecycles
-  - atomic operations with coroutines
+  - Android
 ---
 
 *This post describes a pattern of launching coroutines which cancel when the Activity or ViewModel is destroyed, but support allowing important parts of the coroutine to run uncancelled.*

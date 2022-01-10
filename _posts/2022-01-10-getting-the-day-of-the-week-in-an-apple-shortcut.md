@@ -3,6 +3,9 @@ layout: post
 title: Getting the day of the week in an Apple Shortcut
 date: 2022-01-10 07:53 +0000
 description: How to get the day of the week when using Apple Shortcuts
+categories: 
+- Apple Shortcuts
+- Productivity
 ---
 
 _This post describes how you could structure your Shortcut to get the current day of the week, and how you'd do something different depending on which day it is._

@@ -12,13 +12,8 @@ date: 2018-03-21
 images:
 #- /images/image.jpg
 
-keywords:
+categories:
   - Android
-  - RecyclerView
-  - ListAdapter
-  - DiffUtil
-  - notifyDataSetChanged
-  - Animations
 
 permalink: 2018/03/recyclerview-more-animations-with-less-code-using-support-library-listadapter/
 ---

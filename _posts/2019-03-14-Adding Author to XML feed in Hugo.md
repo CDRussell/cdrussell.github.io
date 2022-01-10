@@ -3,12 +3,6 @@ layout: post
 title: "Adding Author tag to RSS Feed using Hugo static site generator"
 date: 2019-03-14 01:34:15Z
 description: How to include the author tag in the generated RSS feed for a Hugo-generated site.
-keywords:
-  - hugo
-  - rss feed
-  - add author
-  - add author to rss feed
-  - include author
 
 list_image: /images/rss-icon.png
 images:

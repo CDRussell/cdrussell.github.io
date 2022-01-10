@@ -4,17 +4,6 @@ title: "Send Firebase FCM Push Notification from AWS Lambda"
 date: 2019-03-06T23:50:21Z
 description: An example of how to configure an Amazon AWS Lambda to send a push notification to Firebase FCM, written with the Node.js 8.10 runtime.
 permalink: 2019/03/send-firebase-fcm-push-notification-from-aws-lambda/
-keywords:
-  - FCM
-  - Firebase
-  - Firebase cloud messaging
-  - AWS Lambda
-  - Amazon Lambda
-  - Node.js
-  - Push notification
-  - Send push
-  - Trigger push
-  - Send message
 images:
 - /images/firebase-lambda.png
 featured_image: /images/firebase-lambda.png

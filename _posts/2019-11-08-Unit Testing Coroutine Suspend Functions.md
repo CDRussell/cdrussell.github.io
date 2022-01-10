@@ -5,18 +5,8 @@ date: 2019-11-08
 permalink: 2019/11/unit-testing-coroutine-suspend-functions-using-testcoroutinedispatcher/
 
 description: Kotlin coroutines provide an elegant way to write asynchronous code, but sometimes coroutines make it difficult to write unit tests. This post describes how to use TestCoroutineDispatcher to write efficient and stable unit tests for code written with coroutines.
-keywords:
-  - unit testing coroutines
-  - kotlin
-  - kotlin coroutines
-  - override default coroutine dispatchers
-  - runBlocking
-  - runBlockingTest
-  - TestCoroutineDispatcher
-  - kotlinx-coroutines-test
-  - customize Dispatchers.IO
-  - Dispatchers.Main
-  - android
+categories:
+  - Android
 ---
 *Kotlin coroutines provide an elegant way to write asynchronous code, but __sometimes coroutines make it difficult to write unit tests__.*
 

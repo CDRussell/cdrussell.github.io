@@ -3,16 +3,6 @@ layout: post
 title: "Installing Fathom Analytics on Amazon EC2"
 date: 2019-03-15T02:03:53Z
 description: How to install the privacy-focussed Fathom website analytics on an Amazon EC2 instance.
-keywords: 
-  - fathom
-  - analytics
-  - alternative to google analytics
-  - privacy
-  - GDPR
-  - self-hosted analytics
-  - EC2
-  - apache
-  - reverse proxy
 
 images: 
 - /images/fathom-example.jpg

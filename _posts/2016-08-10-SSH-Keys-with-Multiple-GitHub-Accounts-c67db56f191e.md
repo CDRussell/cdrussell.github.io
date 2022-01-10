@@ -1,11 +1,9 @@
 ---
 date: "2016-08-10 00:26:52.730Z"
 description: How to manage multiple SSH keys for different GitHub.com accounts so that you can access multiple accounts and projects, each with different credentials.
-keywords:
+categories:
 - git
-- ssh keys
-- multiple github
-- mac osx
+- ssh
 title: SSH Keys with Multiple GitHub Accounts
 list_image: /images/multiple-ssh-keys-padlocks.jpeg
 layout: post

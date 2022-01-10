@@ -3,13 +3,8 @@ layout: post
 title: "Code Confessions"
 date: 2019-07-26T00:16:12+01:00
 description: Code Confessions; openly confessing your coding sins to your team. Involve your team and absolve yourself.
-keywords:
-  - code confessions
-  - team work
-  - collaboration
-  - programming
-  - shared responsibility
-  - shared ownership
+categories: 
+  - Soft Skills
 
 # featured_image is the hero image at the top of the page and the thumbnail preview from the home page
 # images typically go into /static/images dir

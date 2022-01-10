@@ -3,15 +3,8 @@ layout: post
 date: 2019-03-05
 title: Coroutine Support in ViewModels using the new ViewModelScope Extension Property
 description: How to use Coroutines in ViewModels, making use of the new ViewModelScope extension property. This allows coroutines to be cancelled automatically when the ViewModel is being cleared.
-keywords:
-  - kotlin
-  - coroutine
-  - viewModelScope
-  - android architecture components
-  - CoroutineScope
-  - Cancel coroutine automatically ViewModel cleared
-  - Cancel coroutine when activity finishes
-  - Cancel coroutine onCleared()
+categories:
+  - Android
 
 permalink: 2019/03/coroutine-support-in-viewmodels-using-the-new-viewmodelscope-extension-property/
 ---
