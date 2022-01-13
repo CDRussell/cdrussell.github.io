@@ -18,7 +18,7 @@ All images that will be included in my blog posts live in the same directory, `I
 />
 
 
-# Too Many Manual Steps
+## Too Many Manual Steps
 The manual steps were the same each time. From the point of having found the image I want to include in Finder:
 1. Choose to copy the image
 2. Open the `Images` subdirectory
@@ -86,6 +86,6 @@ With the image in the correct place, the last step is to reference the image usi
     style="display: block; margin-left: auto; margin-right: auto;"
 />
 
-## Download
+## How you can do this, too
 Shortcut available here: [add-image-to-blog-post.shortcut](/downloads/add-image-to-blog-post.shortcut) (on MacOS device). Open downloaded file, and import into `Apple Shortcuts`
 
