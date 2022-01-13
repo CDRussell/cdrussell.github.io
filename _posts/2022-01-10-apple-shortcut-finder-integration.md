@@ -77,7 +77,7 @@ With the image in the correct place, the last step is to reference the image usi
     style="display: block; margin-left: auto; margin-right: auto;"
 />
 
-## Demo
+# Demo
 
 <img
     src="/images/apple-shortcut-full-flow-animation.gif"
@@ -86,6 +86,6 @@ With the image in the correct place, the last step is to reference the image usi
     style="display: block; margin-left: auto; margin-right: auto;"
 />
 
-## How you can do this, too
+# How you can do this, too
 Shortcut available here: [add-image-to-blog-post.shortcut](/downloads/add-image-to-blog-post.shortcut) (on MacOS device). Open downloaded file, and import into `Apple Shortcuts`
 
