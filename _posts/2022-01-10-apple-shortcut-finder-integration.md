@@ -7,7 +7,7 @@ categories:
 - Productivity
 ---
 
-# The Problem
+# Streamlining addings images to blog
 All images that will be included in my blog posts live in the same directory, `Images`, which is a subfolder of my root blog project repo. Once I have an image I want to include in a blog post, I noticed it being a point of friction to copy it to the correct directory and to add the desired image markup to reference it. 
 
 <img
