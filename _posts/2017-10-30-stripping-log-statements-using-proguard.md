@@ -2,6 +2,7 @@
 layout: post
 title: Stripping log statements using Proguard
 date: 2017-10-30
+description: Stripping log statements using Proguard
 ---
 # Stripping Log Statements using Proguard
 _This post describes how to use Proguard to strip log statements from your Android app; good for both the standard android.util.Log class as well as when using Timber._
