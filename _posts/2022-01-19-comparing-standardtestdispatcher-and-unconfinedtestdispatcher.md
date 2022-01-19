@@ -1,12 +1,14 @@
 ---
 layout: post
-title: Comparing StandardTestDispatcher and UnconfinedTestDispatcher to test coroutines
+title: Comparing StandardTestDispatcher and UnconfinedTestDispatcher
 date: 2022-01-19 16:19 +0000
 description: Describes the two provided coroutine test dispatchers, standard and unconfined, the difference between them and when to use each
+categories: 
+- Android
 ---
 
 # StandardTestDispatcher vs UnconfinedTestDispatcher
-_This articles describes the two provided coroutine test dispatchers, standard and unconfined, the difference between them, and when to use each_
+_This articles describes the provided coroutine test dispatchers, standard and unconfined, the difference between them, and when to use each_
 
 ## Some background
 
@@ -53,15 +55,16 @@ What remains now is deciding which of the two available test dispatchers to use.
 - [UnconfinedTestDispatcher](https://kotlin.github.io/kotlinx.coroutines/kotlinx-coroutines-test/kotlinx.coroutines.test/-unconfined-test-dispatcher.html)
 
 ### StandardTestDispatcher
-A standard test dispatcher does not execute any tasks right away. Instead, it has a test coroutine scheduler which exposes functions like `advanceTimeBy`, `runCurrent` which control when tasks get executed.
+A standard test dispatcher **does not execute any tasks** automatically. When coroutines are launched with this dispatcher, instead of executing immediately they are left in a pending state. 
 
-When coroutines are launched with this dispatcher, instead of executing immediately they are left in a pending state. What this means is that when testing code which launches coroutines (e.g., using `launch { }` ), **they will not be launched automatically**. This gives you full control over what is executed and when, so that you use that fine control to assert your code is working as expected.
+This gives you full control over what is executed and when, so that you use that fine control to assert your code is working as expected.
 
 #### If coroutines don't automatically run when using StandardTestDispatcher, how do you make them run?
 You can access the `TestCoroutineScheduler` linked to the `StandardTestDispatcher` which provides methods for controlling the execution state of pending tasks. The following functions can be called directly from inside your `runTest` block.
 
 [`runCurrent()`](https://kotlin.github.io/kotlinx.coroutines/kotlinx-coroutines-test/kotlinx.coroutines.test/-test-coroutine-scheduler/run-current.html)
-- _runs the pending tasks that have been scheduled until current virtual time_  
+- _runs the pending tasks that have been scheduled until current virtual time_ 
+- _execution order of your coroutines is guaranteed_
 
 [`advanceUntilIdle()`](https://kotlin.github.io/kotlinx.coroutines/kotlinx-coroutines-test/kotlinx.coroutines.test/-test-coroutine-scheduler/advance-until-idle.html)
 - _runs all pending tasks_
@@ -80,10 +83,12 @@ In return for giving up this control, however, you are **not** required to manua
 
 ## Comparing standard and unconfined test dispatchers
 
+
 | **Test Dispatcher Type** | **Full control over execution order** | **Coroutines Run Automatically** | 
-|===|===|===|
+|---|:---:|:---:|
 |Standard|✅|❌|
 |Unconfined|❌|✅|
+
 
 - If you care about testing the order of coroutine execution, use a **Standard** test dispatcher
 - If you have particularly tricky coroutine code, where you need fine control over what is launched and when, use a **Standard** test dispatcher
