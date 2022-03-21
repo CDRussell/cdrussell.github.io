@@ -1,0 +1,231 @@
+<!doctype html>
+<html lang="en-US">
+  <head>
+    <meta charset="utf-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+
+<!-- Begin Jekyll SEO tag v2.7.1 -->
+<title>Be Careful What You Log — It Could Crash Your App | craigrussell</title>
+<meta name="generator" content="Jekyll v4.2.1" />
+<meta property="og:title" content="Be Careful What You Log — It Could Crash Your App" />
+<meta name="author" content="Craig Russell" />
+<meta property="og:locale" content="en_US" />
+<meta name="description" content="Diving into a crash caused by a log statement with mixed parameter styles" />
+<meta property="og:description" content="Diving into a crash caused by a log statement with mixed parameter styles" />
+<link rel="canonical" href="https://proandroiddev.com/be-careful-what-you-log-it-could-crash-your-app-5fc67a44c842" />
+<meta property="og:url" content="https://proandroiddev.com/be-careful-what-you-log-it-could-crash-your-app-5fc67a44c842" />
+<meta property="og:site_name" content="craigrussell" />
+<meta property="og:type" content="article" />
+<meta property="article:published_time" content="2018-01-30T00:00:00+00:00" />
+<meta name="twitter:card" content="summary" />
+<meta property="twitter:title" content="Be Careful What You Log — It Could Crash Your App" />
+<script type="application/ld+json">
+{"description":"Diving into a crash caused by a log statement with mixed parameter styles","url":"https://proandroiddev.com/be-careful-what-you-log-it-could-crash-your-app-5fc67a44c842","@type":"BlogPosting","headline":"Be Careful What You Log — It Could Crash Your App","dateModified":"2018-01-30T00:00:00+00:00","datePublished":"2018-01-30T00:00:00+00:00","mainEntityOfPage":{"@type":"WebPage","@id":"https://proandroiddev.com/be-careful-what-you-log-it-could-crash-your-app-5fc67a44c842"},"author":{"@type":"Person","name":"Craig Russell"},"@context":"https://schema.org"}</script>
+<!-- End Jekyll SEO tag -->
+
+
+    <link rel="stylesheet" href="/assets/css/style.css?v=">
+    <script src="/assets/js/scale.fix.js"></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+
+    <!--[if lt IE 9]>
+    <script src="//html5shiv.googlecode.com/svn/trunk/html5.js"></script>
+    <![endif]-->
+
+    <!-- start custom head snippets, customize with your own _includes/head-custom.html file -->
+
+<!-- Setup Google Analytics -->
+
+
+
+<!-- You can set your favicon here -->
+<!-- link rel="shortcut icon" type="image/x-icon" href="/favicon.ico" -->
+
+<!-- end custom head snippets -->
+
+  </head>
+  <body>
+    <div class="wrapper">
+      <header >
+        <a href='https://cdrussell.github.io//'>
+          <h1>craigrussell</h1>
+          
+            <p>Technical blog from Craig Russell.</p>
+          
+        </a>
+
+        <nav>
+  <div style="
+         top: 0px;
+         right: 0px;
+         position: absolute">
+
+    <a href="/about">
+      <figure>
+        <img src="/images/me-round.png"
+             style="
+              height: 50px;
+              display: block;
+              margin-left: auto;
+              margin-right: auto;
+              "
+             alt="Photo of me, wearing a bright yellow t-shirt with a bright blue, cloudy sky in the background"
+        />
+        <figcaption style="text-align:justify" >About me</figcaption>
+      </figure>
+    </a>
+  </div>
+</nav>
+
+
+        <p> </p>
+      </header>
+      <section>
+
+      <p><em>If you are using Timber to log in your Android app you should be careful about logging variables you don’t fully control. If the input is formatted in a certain way, your app can crash.</em></p>
+
+<div class="language-kotlin highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="nc">Timber</span><span class="p">.</span><span class="nf">w</span><span class="p">(</span><span class="s">"The URL is %s - visited $count times"</span><span class="p">,</span> <span class="n">url</span><span class="p">)</span>
+<span class="nc">Timber</span><span class="p">.</span><span class="nf">w</span><span class="p">(</span><span class="s">"The URL is $url - visited %d times"</span><span class="p">,</span> <span class="n">count</span><span class="p">)</span>
+</code></pre></div></div>
+
+<p>One of these will log a URL quite happily, while the other could crash your app at runtime.</p>
+
+<p><img src="/images/timber-careful-logging-crash-scream.png" alt="scream emoji" height="100" style="display: block; margin-left: auto; margin-right: auto;" /></p>
+
+<h2 id="overview">Overview</h2>
+<p>When using <code class="language-plaintext highlighter-rouge">Timber</code> and <code class="language-plaintext highlighter-rouge">Kotlin</code>, you can use <a href="https://kotlinlang.org/docs/reference/basic-types.html#string-templates">Kotlin String Templates</a> to inject variables into your log statements or you can use the standard <a href="https://github.com/JakeWharton/timber/blob/master/timber/src/main/java/timber/log/Timber.java#L57">Timber parameter formatting</a>.</p>
+
+<h2 id="timbers-approach">Timber’s Approach</h2>
+<div class="language-kotlin highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="nc">Timber</span><span class="p">.</span><span class="nf">w</span><span class="p">(</span><span class="s">"#1 - The URL is %s"</span><span class="p">,</span> <span class="n">url</span><span class="p">)</span>
+</code></pre></div></div>
+
+<h2 id="kotlins-approach">Kotlin’s Approach</h2>
+<div class="language-kotlin highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="nc">Timber</span><span class="p">.</span><span class="nf">w</span><span class="p">(</span><span class="s">"#2 - The URL is $url"</span><span class="p">)</span>
+</code></pre></div></div>
+
+<p>⚠️ You are advised to <strong>use only the Timber parameter formatting style</strong>.</p>
+
+<p>When you try to mix both styles things can go wrong, as is detailed below. But even if you keep your style consistent the Timber approach has an advantage; lazy string concatenation. Timber will only build your parameters into a string for logging if the log will be used (if there is a logging tree configured).</p>
+
+<p>If you use the Kotlin string template approach, those strings will always be built even if logging isn’t enabled for that particular build of your app.</p>
+
+<h2 id="logging-urls">Logging URLs</h2>
+<p>I added some debug-only log statements to log the <code class="language-plaintext highlighter-rouge">URL</code>s a <code class="language-plaintext highlighter-rouge">WebView</code> was visiting to help track down a problem I was facing. I visited a few sites and all was fine. And then I visited another site and my app crashed. 😱</p>
+
+<p>In my examples below, I use <code class="language-plaintext highlighter-rouge">Timber</code>, however, the problem really happens in the calls to <a href="https://developer.android.com/reference/java/lang/String.html#format(java.lang.String,%20java.lang.Object...)"><code class="language-plaintext highlighter-rouge">String.format(String message, Object... args</code>)</a>.</p>
+
+<h2 id="examples">Examples</h2>
+
+<p>In all the examples below, I am using the same URL: <code class="language-plaintext highlighter-rouge">example.com/%2F</code></p>
+
+<p>Although this looks contrived, it’s just a simplified example of one I saw in the wild. <code class="language-plaintext highlighter-rouge">%2F</code> is the code for a URL-encoded <code class="language-plaintext highlighter-rouge">/</code> (forward slash).</p>
+
+<p>Ultimately, this is the problem. <code class="language-plaintext highlighter-rouge">%2F</code> itself is a string format placeholder. This is using an explicit index to specify that you will provide a float in the second parameter.</p>
+
+<div class="language-kotlin highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="c1">// one variable</span>
+<span class="nc">Timber</span><span class="p">.</span><span class="nf">w</span><span class="p">(</span><span class="s">"#1 - The URL is %s"</span><span class="p">,</span> <span class="n">url</span><span class="p">)</span>
+<span class="nc">Timber</span><span class="p">.</span><span class="nf">w</span><span class="p">(</span><span class="s">"#2 - The URL is $url"</span><span class="p">)</span>
+
+<span class="c1">// two variables - both given in same style</span>
+<span class="nc">Timber</span><span class="p">.</span><span class="nf">w</span><span class="p">(</span><span class="s">"#3 - The URL is %s - visited %d times"</span><span class="p">,</span> <span class="n">url</span><span class="p">,</span> <span class="n">count</span><span class="p">)</span>
+<span class="nc">Timber</span><span class="p">.</span><span class="nf">w</span><span class="p">(</span><span class="s">"#4 - The URL is $url - visited $count times"</span><span class="p">)</span>
+
+<span class="c1">// two variables - mixing and matching styles</span>
+<span class="nc">Timber</span><span class="p">.</span><span class="nf">w</span><span class="p">(</span><span class="s">"#5 - The URL is %s - visited $count times"</span><span class="p">,</span> <span class="n">url</span><span class="p">)</span>
+<span class="nc">Timber</span><span class="p">.</span><span class="nf">w</span><span class="p">(</span><span class="s">"#6 - The URL is $url - visited %d times"</span><span class="p">,</span> <span class="n">count</span><span class="p">)</span>
+</code></pre></div></div>
+
+<p>All 6 of these statements look like they will work at first glance. However, one will crash; one will work even though <code class="language-plaintext highlighter-rouge">Lint</code> will show it as an error; leaving the other 4 to work as expected.</p>
+
+<p><img src="/images/timber-careful-logging-stacktrace.png" alt="stacktrace showing an unknown format conversion exception" width="500" style="display: block; margin-left: auto; margin-right: auto;" /></p>
+
+<h2 id="1-this-is-ok-">1— This is ok ✅</h2>
+<p><code class="language-plaintext highlighter-rouge">Timber.w("#1 - The URL is %s", url)</code></p>
+
+<p>This is fine; using the standard <code class="language-plaintext highlighter-rouge">Timber</code> mechanism for formatting strings.</p>
+
+<h2 id="2--this-is-ok-">2 — This is ok ✅</h2>
+<p><code class="language-plaintext highlighter-rouge">Timber.w("#2 - The URL is $url")</code></p>
+
+<p>This is using Kotlin’s <a href="https://kotlinlang.org/docs/reference/basic-types.html#string-templates">String Templates</a> which will handle replacing the <code class="language-plaintext highlighter-rouge">$url</code> with the variable. This works as expected; nothing to see here.</p>
+
+<h2 id="3--this-is-ok-">3 — This is ok ✅</h2>
+<p><code class="language-plaintext highlighter-rouge">Timber.w(“#3 — The URL is %s — visited %d times”, url, count)</code></p>
+
+<p>We’re providing two variables here, one string and one int and providing both in the standard <code class="language-plaintext highlighter-rouge">Timber</code> manner.</p>
+
+<h2 id="4--this-is-ok-">4 — This is ok ✅</h2>
+<p><code class="language-plaintext highlighter-rouge">Timber.w(“#4 — The URL is $url — visited $count times”)</code></p>
+
+<p>As above, two parameters. This time we’re using Kotlin string templates to provide the substitutions.</p>
+
+<h2 id="5--this-is-a-bit-funny-">5 — This is a bit funny 🤡</h2>
+<p><code class="language-plaintext highlighter-rouge">Timber.w(“#5 — The URL is %s — visited $count times”, url)</code></p>
+
+<p><img src="/images/timber-careful-logging-code-example.png" alt="code example showing lint warning" width="500" style="display: block; margin-left: auto; margin-right: auto;" /></p>
+
+<p>We’re providing two parameters again, but this time mixing the style between standard <code class="language-plaintext highlighter-rouge">Timber</code> and <code class="language-plaintext highlighter-rouge">Kotlin String Templates</code> . Things are starting to go a bit off here. The lint check is giving me an error here that I’ve provided the wrong number of arguments. But there is only one <code class="language-plaintext highlighter-rouge">%s</code> and one argument is provided so there should be no lint error here at all.</p>
+
+<p>Despite the red squigglies, this runs fine. By the time it gets to the <code class="language-plaintext highlighter-rouge">String.format</code> method, the message parameter is</p>
+
+<p><code class="language-plaintext highlighter-rouge">#5 — The URL is %s — visited 4 times</code></p>
+
+<p>Here, the count value has already been substituted, but the URL has not.</p>
+
+<h2 id="6--and-heres-the-crash-">6 — And here’s the crash 💥</h2>
+<p><code class="language-plaintext highlighter-rouge">Timber.w(“#6 — The URL is $url — visited %d times”, count)</code></p>
+
+<p>Same as #5 above, except we’ve switched it so that <code class="language-plaintext highlighter-rouge">$url</code> is provided as a <code class="language-plaintext highlighter-rouge">Kotlin String Template</code> and <code class="language-plaintext highlighter-rouge">%d</code> is provided using the standard <code class="language-plaintext highlighter-rouge">Timber</code> arguments for passing an int.</p>
+
+<p>This time, lint is perfectly happy with this line but it crashes when given our URL <code class="language-plaintext highlighter-rouge">example.com/%2F</code>.</p>
+
+<p>This time, when it gets to the <code class="language-plaintext highlighter-rouge">String.format</code> line, the message is:</p>
+
+<p><code class="language-plaintext highlighter-rouge">#6 — The URL is http://example.com/%2F — visited %d times</code></p>
+
+<p>The URL has been substituted in place but the count has not. This now means it expects two parameters to be provided as arguments to the format method: <code class="language-plaintext highlighter-rouge">%2F</code> and <code class="language-plaintext highlighter-rouge">%d</code>. However, we only satisfy one of those, and therefore it throws an exception:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>java.util.UnknownFormatConversionException: Conversion = 'F'
+    at java.util.Formatter$FormatSpecifier.conversion(Formatter.java:2781)
+    at java.util.Formatter$FormatSpecifier.&lt;init&gt;(Formatter.java:2811)
+    at java.util.Formatter$FormatSpecifierParser.&lt;init&gt;(Formatter.java:2624)
+    at java.util.Formatter.parse(Formatter.java:2557)
+    at java.util.Formatter.format(Formatter.java:2504)
+    at java.util.Formatter.format(Formatter.java:2458)
+    at java.lang.String.format(String.java:2770)
+    at timber.log.Timber$Tree.formatMessage(Timber.java:561)
+    at timber.log.Timber$Tree.prepareLog(Timber.java:547)
+    at timber.log.Timber$Tree.w(Timber.java:457)
+    at timber.log.Timber$1.w(Timber.java:296)
+    at timber.log.Timber.w(Timber.java:68)
+</code></pre></div></div>
+
+<h1 id="summary">Summary</h1>
+<p>It’s fine to use <code class="language-plaintext highlighter-rouge">Timber</code> and <code class="language-plaintext highlighter-rouge">Kotlin</code> together. And while you can technically use either Kotlin string templates or Timber’s standard formatting, use of Timber’s method of providing parameters for logging is preferred as it is more efficient when logging is disabled.</p>
+
+<p>Even if the performance benefit of using Timber’s approach doesn’t bother you and you prefer Kotlin’s, you should never try to mix and match using both approaches.</p>
+
+<h2 id="miscellaneous">Miscellaneous</h2>
+<p>This is questionable, but won’t crash</p>
+
+<div class="language-kotlin highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="nc">Timber</span><span class="p">.</span><span class="nf">i</span><span class="p">(</span><span class="s">"%2f"</span><span class="p">)</span>
+</code></pre></div></div>
+
+<p>Even though Timber will helpfully warn you that you haven’t provided the right number of arguments for the given format, nothing will crash. Nothing will crash because Timber will know there are no arguments, and therefore won’t call through to the <code class="language-plaintext highlighter-rouge">formatMessage</code> method.</p>
+
+<div class="language-kotlin highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">if</span> <span class="p">(</span><span class="n">args</span> <span class="p">!=</span> <span class="k">null</span> <span class="p">&amp;&amp;</span> <span class="n">args</span><span class="p">.</span><span class="n">length</span> <span class="p">&gt;</span> <span class="mi">0</span><span class="p">)</span> <span class="p">{</span>
+  <span class="n">message</span> <span class="p">=</span> <span class="nf">formatMessage</span><span class="p">(</span><span class="n">message</span><span class="p">,</span> <span class="n">args</span><span class="p">);</span>
+<span class="p">}</span>
+</code></pre></div></div>
+
+
+<a href='https://cdrussell.github.io//'>Home</a>
+
+
+      </section>
+    </div>
+    <footer>
+    </footer>
+    <!--[if !IE]><script>fixScale(document);</script><![endif]-->
+  </body>
+</html>

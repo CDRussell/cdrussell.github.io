@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="en-US">
+  <head>
+    <meta charset="utf-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+
+<!-- Begin Jekyll SEO tag v2.7.1 -->
+<title>Kotlin — Measure and Execute a block of code | craigrussell</title>
+<meta name="generator" content="Jekyll v4.2.1" />
+<meta property="og:title" content="Kotlin — Measure and Execute a block of code" />
+<meta name="author" content="Craig Russell" />
+<meta property="og:locale" content="en_US" />
+<meta name="description" content="Kotlin utility function to execute code and measure how long that took" />
+<meta property="og:description" content="Kotlin utility function to execute code and measure how long that took" />
+<link rel="canonical" href="https://cdrussell.github.io//2019/02/14/kotlin-measure-and-execute-a-block-of-code" />
+<meta property="og:url" content="https://cdrussell.github.io//2019/02/14/kotlin-measure-and-execute-a-block-of-code" />
+<meta property="og:site_name" content="craigrussell" />
+<meta property="og:type" content="article" />
+<meta property="article:published_time" content="2019-02-14T00:00:00+00:00" />
+<meta name="twitter:card" content="summary" />
+<meta property="twitter:title" content="Kotlin — Measure and Execute a block of code" />
+<script type="application/ld+json">
+{"description":"Kotlin utility function to execute code and measure how long that took","url":"https://cdrussell.github.io//2019/02/14/kotlin-measure-and-execute-a-block-of-code","@type":"BlogPosting","headline":"Kotlin — Measure and Execute a block of code","dateModified":"2019-02-14T00:00:00+00:00","datePublished":"2019-02-14T00:00:00+00:00","mainEntityOfPage":{"@type":"WebPage","@id":"https://cdrussell.github.io//2019/02/14/kotlin-measure-and-execute-a-block-of-code"},"author":{"@type":"Person","name":"Craig Russell"},"@context":"https://schema.org"}</script>
+<!-- End Jekyll SEO tag -->
+
+
+    <link rel="stylesheet" href="/assets/css/style.css?v=">
+    <script src="/assets/js/scale.fix.js"></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+
+    <!--[if lt IE 9]>
+    <script src="//html5shiv.googlecode.com/svn/trunk/html5.js"></script>
+    <![endif]-->
+
+    <!-- start custom head snippets, customize with your own _includes/head-custom.html file -->
+
+<!-- Setup Google Analytics -->
+
+
+
+<!-- You can set your favicon here -->
+<!-- link rel="shortcut icon" type="image/x-icon" href="/favicon.ico" -->
+
+<!-- end custom head snippets -->
+
+  </head>
+  <body>
+    <div class="wrapper">
+      <header >
+        <a href='https://cdrussell.github.io//'>
+          <h1>craigrussell</h1>
+          
+            <p>Technical blog from Craig Russell.</p>
+          
+        </a>
+
+        <nav>
+  <div style="
+         top: 0px;
+         right: 0px;
+         position: absolute">
+
+    <a href="/about">
+      <figure>
+        <img src="/images/me-round.png"
+             style="
+              height: 50px;
+              display: block;
+              margin-left: auto;
+              margin-right: auto;
+              "
+             alt="Photo of me, wearing a bright yellow t-shirt with a bright blue, cloudy sky in the background"
+        />
+        <figcaption style="text-align:justify" >About me</figcaption>
+      </figure>
+    </a>
+  </div>
+</nav>
+
+
+        <p> </p>
+      </header>
+      <section>
+
+      <h2 id="kotlin--measure-and-execute-a-block-of-code">Kotlin — Measure and Execute a block of code</h2>
+
+<p><img src="/images/stock-image-timer.jpeg" alt="stock image of a white kitchen timer" width="500" style="display: block; margin-left: auto; margin-right: auto;" /></p>
+
+<h3 id="overview">Overview</h3>
+
+<p>This post illustrates a utility function which executes a block of code. It also measures how long it took to execute, and logs the duration.</p>
+
+<p>This is useful for generating crude benchmarks of operations so you can see roughly how long a block of code takes to execute. It’s not scientific, but sometimes it’s enough to make decisions on where bottlenecks might lie.</p>
+
+<p>It records the start time, executes the function and prints out the time it took to execute.</p>
+
+<h3 id="measure-and-execute"><strong>Measure and Execute</strong></h3>
+
+<div class="language-kotlin highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">inline</span> <span class="k">fun</span> <span class="p">&lt;</span><span class="nc">T</span><span class="p">&gt;</span> <span class="nf">measureExecution</span><span class="p">(</span><span class="n">logMessage</span><span class="p">:</span> <span class="nc">String</span><span class="p">,</span> <span class="n">logLevel</span><span class="p">:</span> <span class="nc">Int</span> <span class="p">=</span> <span class="nc">Log</span><span class="p">.</span><span class="nc">DEBUG</span><span class="p">,</span> <span class="n">function</span><span class="p">:</span> <span class="p">()</span> <span class="p">-&gt;</span> <span class="nc">T</span><span class="p">):</span> <span class="nc">T</span> <span class="p">{</span>
+    <span class="kd">val</span> <span class="py">startTime</span> <span class="p">=</span> <span class="nc">System</span><span class="p">.</span><span class="nf">nanoTime</span><span class="p">()</span>
+    <span class="k">return</span> <span class="n">function</span><span class="p">.</span><span class="nf">invoke</span><span class="p">().</span><span class="nf">also</span> <span class="p">{</span>
+        <span class="kd">val</span> <span class="py">difference</span> <span class="p">=</span> <span class="nc">System</span><span class="p">.</span><span class="nf">nanoTime</span><span class="p">()</span> <span class="p">-</span> <span class="n">startTime</span>
+        <span class="nc">Timber</span><span class="p">.</span><span class="nf">log</span><span class="p">(</span><span class="n">logLevel</span><span class="p">,</span> <span class="s">"$logMessage; took ${TimeUnit.NANOSECONDS.toMillis(difference)}ms"</span><span class="p">)</span>
+    <span class="p">}</span>
+<span class="p">}</span>
+</code></pre></div></div>
+
+<ul>
+  <li>We define the function measureExecution to accept a log message that will be printed after execution is finished.</li>
+  <li>We can also provide a log level to use though it will default to DEBUG if you omit it.</li>
+  <li>And finally it accepts the action code you want to measure, defined as a function: () -&gt; T; this function accepts no parameters but returns <em>something</em> if required.</li>
+</ul>
+
+<h3 id="usage">Usage</h3>
+
+<p>For the simplest usage case, call the measureExecution function passing in the log statement to accompany the measurement. For example:</p>
+
+<div class="language-kotlin highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="nf">measureExecution</span><span class="p">(</span><span class="s">"Finished doing work"</span><span class="p">)</span> <span class="p">{</span>
+  <span class="n">foo</span><span class="p">.</span><span class="nf">doSomeWork</span><span class="p">()</span>
+<span class="p">}</span>
+</code></pre></div></div>
+
+<p>This will output Finished doing work; took 123ms at DEBUG log level. If you wanted to log to a different log level, and perhaps return a value, that’s cool too.</p>
+
+<div class="language-kotlin highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="kd">val</span> <span class="py">result</span> <span class="p">=</span> <span class="nf">measureExecution</span><span class="p">(</span><span class="s">"Finished doing work"</span><span class="p">,</span> <span class="nc">Log</span><span class="p">.</span><span class="nc">INFO</span><span class="p">)</span> <span class="p">{</span>
+  <span class="n">foo</span><span class="p">.</span><span class="nf">doSomeWork</span><span class="p">()</span>
+  <span class="k">return</span> <span class="n">foo</span><span class="p">.</span><span class="nf">getResult</span><span class="p">()</span>
+<span class="p">}</span>
+</code></pre></div></div>
+
+<p>You don’t even need to specify the type; the compiler will figure it out 👌</p>
+
+<p><em>Image Attribution: <a href="https://unsplash.com/photos/vZawEq0Eexo?utm_source=unsplash&amp;utm_medium=referral&amp;utm_content=creditCopyText">Marcelo Leal</a> on <a href="https://unsplash.com/search/photos/timer?utm_source=unsplash&amp;utm_medium=referral&amp;utm_content=creditCopyText">Unsplash</a></em></p>
+
+
+<a href='https://cdrussell.github.io//'>Home</a>
+
+
+      </section>
+    </div>
+    <footer>
+    </footer>
+    <!--[if !IE]><script>fixScale(document);</script><![endif]-->
+  </body>
+</html>

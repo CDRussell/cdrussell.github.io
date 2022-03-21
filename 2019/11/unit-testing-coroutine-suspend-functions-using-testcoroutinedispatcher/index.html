@@ -1,0 +1,475 @@
+<!doctype html>
+<html lang="en-US">
+  <head>
+    <meta charset="utf-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+
+<!-- Begin Jekyll SEO tag v2.7.1 -->
+<title>Unit Testing Coroutine Suspend Functions using TestCoroutineDispatcher | craigrussell</title>
+<meta name="generator" content="Jekyll v4.2.1" />
+<meta property="og:title" content="Unit Testing Coroutine Suspend Functions using TestCoroutineDispatcher" />
+<meta name="author" content="Craig Russell" />
+<meta property="og:locale" content="en_US" />
+<meta name="description" content="Kotlin coroutines provide an elegant way to write asynchronous code, but sometimes coroutines make it difficult to write unit tests. This post describes how to use TestCoroutineDispatcher to write efficient and stable unit tests for code written with coroutines." />
+<meta property="og:description" content="Kotlin coroutines provide an elegant way to write asynchronous code, but sometimes coroutines make it difficult to write unit tests. This post describes how to use TestCoroutineDispatcher to write efficient and stable unit tests for code written with coroutines." />
+<link rel="canonical" href="https://cdrussell.github.io//2019/11/unit-testing-coroutine-suspend-functions-using-testcoroutinedispatcher/" />
+<meta property="og:url" content="https://cdrussell.github.io//2019/11/unit-testing-coroutine-suspend-functions-using-testcoroutinedispatcher/" />
+<meta property="og:site_name" content="craigrussell" />
+<meta property="og:type" content="article" />
+<meta property="article:published_time" content="2019-11-08T00:00:00+00:00" />
+<meta name="twitter:card" content="summary" />
+<meta property="twitter:title" content="Unit Testing Coroutine Suspend Functions using TestCoroutineDispatcher" />
+<script type="application/ld+json">
+{"description":"Kotlin coroutines provide an elegant way to write asynchronous code, but sometimes coroutines make it difficult to write unit tests. This post describes how to use TestCoroutineDispatcher to write efficient and stable unit tests for code written with coroutines.","url":"https://cdrussell.github.io//2019/11/unit-testing-coroutine-suspend-functions-using-testcoroutinedispatcher/","@type":"BlogPosting","headline":"Unit Testing Coroutine Suspend Functions using TestCoroutineDispatcher","dateModified":"2019-11-08T00:00:00+00:00","datePublished":"2019-11-08T00:00:00+00:00","mainEntityOfPage":{"@type":"WebPage","@id":"https://cdrussell.github.io//2019/11/unit-testing-coroutine-suspend-functions-using-testcoroutinedispatcher/"},"author":{"@type":"Person","name":"Craig Russell"},"@context":"https://schema.org"}</script>
+<!-- End Jekyll SEO tag -->
+
+
+    <link rel="stylesheet" href="/assets/css/style.css?v=">
+    <script src="/assets/js/scale.fix.js"></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+
+    <!--[if lt IE 9]>
+    <script src="//html5shiv.googlecode.com/svn/trunk/html5.js"></script>
+    <![endif]-->
+
+    <!-- start custom head snippets, customize with your own _includes/head-custom.html file -->
+
+<!-- Setup Google Analytics -->
+
+
+
+<!-- You can set your favicon here -->
+<!-- link rel="shortcut icon" type="image/x-icon" href="/favicon.ico" -->
+
+<!-- end custom head snippets -->
+
+  </head>
+  <body>
+    <div class="wrapper">
+      <header >
+        <a href='https://cdrussell.github.io//'>
+          <h1>craigrussell</h1>
+          
+            <p>Technical blog from Craig Russell.</p>
+          
+        </a>
+
+        <nav>
+  <div style="
+         top: 0px;
+         right: 0px;
+         position: absolute">
+
+    <a href="/about">
+      <figure>
+        <img src="/images/me-round.png"
+             style="
+              height: 50px;
+              display: block;
+              margin-left: auto;
+              margin-right: auto;
+              "
+             alt="Photo of me, wearing a bright yellow t-shirt with a bright blue, cloudy sky in the background"
+        />
+        <figcaption style="text-align:justify" >About me</figcaption>
+      </figure>
+    </a>
+  </div>
+</nav>
+
+
+        <p> </p>
+      </header>
+      <section>
+
+      <p><em>Kotlin coroutines provide an elegant way to write asynchronous code, but <strong>sometimes coroutines make it difficult to write unit tests</strong>.</em></p>
+
+<p><em>This post describes how to use <code class="language-plaintext highlighter-rouge">TestCoroutineDispatcher</code> to write efficient and stable unit tests for code written with coroutines.</em></p>
+
+<h1 id="update-2021-12-08">UPDATE: 2021-12-08</h1>
+<p>A new recommended way to test coroutines now exists. See <a href="https://craigrussell.io/2021/12/testing-android-coroutines-using-runtest/">Testing Coroutines using runTest</a> for more info on the latest recommended practices for testing coroutines.</p>
+
+<h2 id="unit-testing-a-suspend-function">Unit testing a Suspend function</h2>
+<p>In order to reliably unit test a <code class="language-plaintext highlighter-rouge">suspend</code> function written with Kotlin Coroutines, there are a few things we need to know.</p>
+
+<p>At a minimum, we need to know how to build a coroutine from our unit tests and how to make our unit tests wait until all the jobs in the coroutine have finished.</p>
+
+<p>Ideally beyond that, we will want to know how to make our unit test run as fast as possible, and not sit around waiting for a coroutine <code class="language-plaintext highlighter-rouge">delay</code> to finish.</p>
+
+<p>This post will describe how to achieve this so you can quickly and reliably unit test <code class="language-plaintext highlighter-rouge">suspend</code> functions.</p>
+
+<h2 id="setup">Setup</h2>
+<h3 id="gradle-dependencies">Gradle Dependencies</h3>
+<p>We are going to use the <a href="https://kotlin.github.io/kotlinx.coroutines/kotlinx-coroutines-test/"><code class="language-plaintext highlighter-rouge">kotlinx-coroutines-test</code></a> library, so we’ll need to add that to our dependendies in <code class="language-plaintext highlighter-rouge">build.gradle</code>.</p>
+
+<div class="language-kotlin highlighter-rouge"><div class="highlight"><pre class="highlight"><code>
+<span class="nf">ext</span> <span class="p">{</span>
+    <span class="n">coroutines</span> <span class="p">=</span> <span class="s">"1.3.1"</span>
+<span class="p">}</span>
+
+<span class="nf">dependencies</span> <span class="p">{</span>
+    <span class="n">implementation</span> <span class="s">"org.jetbrains.kotlinx:kotlinx-coroutines-core:$coroutines"</span>
+    <span class="n">implementation</span> <span class="s">"org.jetbrains.kotlinx:kotlinx-coroutines-android:$coroutines"</span>
+
+    <span class="c1">// testImplementation for pure JVM unit tests</span>
+    <span class="n">testImplementation</span> <span class="s">"org.jetbrains.kotlinx:kotlinx-coroutines-test:$coroutines"</span>
+
+    <span class="c1">// androidTestImplementation for Android instrumentation tests</span>
+    <span class="n">androidTestImplementation</span> <span class="s">"org.jetbrains.kotlinx:kotlinx-coroutines-test:$coroutines"</span>
+<span class="p">}</span>
+</code></pre></div></div>
+
+<h3 id="coroutinetestrule">CoroutineTestRule</h3>
+<p>Add the following class to your project - it can be included alongside your unit tests.</p>
+<div class="language-kotlin highlighter-rouge"><div class="highlight"><pre class="highlight"><code>
+<span class="nd">@ExperimentalCoroutinesApi</span>
+<span class="kd">class</span> <span class="nc">CoroutineTestRule</span><span class="p">(</span><span class="kd">val</span> <span class="py">testDispatcher</span><span class="p">:</span> <span class="nc">TestCoroutineDispatcher</span> <span class="p">=</span> <span class="nc">TestCoroutineDispatcher</span><span class="p">())</span> <span class="p">:</span> <span class="nc">TestWatcher</span><span class="p">()</span> <span class="p">{</span>
+    <span class="k">override</span> <span class="k">fun</span> <span class="nf">starting</span><span class="p">(</span><span class="n">description</span><span class="p">:</span> <span class="nc">Description</span><span class="p">?)</span> <span class="p">{</span>
+        <span class="k">super</span><span class="p">.</span><span class="nf">starting</span><span class="p">(</span><span class="n">description</span><span class="p">)</span>
+        <span class="nc">Dispatchers</span><span class="p">.</span><span class="nf">setMain</span><span class="p">(</span><span class="n">testDispatcher</span><span class="p">)</span>
+    <span class="p">}</span>
+
+    <span class="k">override</span> <span class="k">fun</span> <span class="nf">finished</span><span class="p">(</span><span class="n">description</span><span class="p">:</span> <span class="nc">Description</span><span class="p">?)</span> <span class="p">{</span>
+        <span class="k">super</span><span class="p">.</span><span class="nf">finished</span><span class="p">(</span><span class="n">description</span><span class="p">)</span>
+        <span class="nc">Dispatchers</span><span class="p">.</span><span class="nf">resetMain</span><span class="p">()</span>
+        <span class="n">testDispatcher</span><span class="p">.</span><span class="nf">cleanupTestCoroutines</span><span class="p">()</span>
+    <span class="p">}</span>
+<span class="p">}</span>
+
+</code></pre></div></div>
+
+<p>This class is a unit test rule which watches for tests starting and finishing. It contains a reference to a <code class="language-plaintext highlighter-rouge">TestCoroutineDispatcher</code>, and as tests are starting and stopping it overrides the default <code class="language-plaintext highlighter-rouge">Dispatchers.Main</code> dispatcher and replaces the default with our test dispatcher.</p>
+
+<h3 id="apply-the-coroutinetestrule">Apply the CoroutineTestRule</h3>
+<p>Apply the unit test rule to your unit test class.</p>
+
+<div class="language-kotlin highlighter-rouge"><div class="highlight"><pre class="highlight"><code>
+<span class="nd">@ExperimentalCoroutinesApi</span>
+<span class="kd">class</span> <span class="nc">HeavyWorkerTest</span> <span class="p">{</span>
+    
+    <span class="err">@</span><span class="k">get</span><span class="p">:</span><span class="nc">Rule</span>
+    <span class="kd">var</span> <span class="py">coroutinesTestRule</span> <span class="p">=</span> <span class="nc">CoroutineTestRule</span><span class="p">()</span>
+
+    <span class="c1">// todo - write some tests</span>
+<span class="p">}</span>
+
+</code></pre></div></div>
+
+<h3 id="onwards">Onwards</h3>
+<p>With that setup done, we’re now ready to proceed.</p>
+
+<h2 id="unit-testing-a-suspend-function-1">Unit Testing a Suspend Function</h2>
+<h3 id="example">Example</h3>
+<p>Let’s take the following <code class="language-plaintext highlighter-rouge">HeavyWorker</code> class as an example. It has a <code class="language-plaintext highlighter-rouge">heavyOperation()</code> function which is <code class="language-plaintext highlighter-rouge">suspendable</code>. Our goal here is to write unit tests for it that are stable and run as quickly as possible.</p>
+
+<div class="language-kotlin highlighter-rouge"><div class="highlight"><pre class="highlight"><code>
+<span class="kd">class</span> <span class="nc">HeavyWorker</span> <span class="p">{</span>
+
+    <span class="k">suspend</span> <span class="k">fun</span> <span class="nf">heavyOperation</span><span class="p">():</span> <span class="nc">Long</span> <span class="p">{</span>
+        <span class="k">return</span> <span class="nf">withContext</span><span class="p">(</span><span class="nc">Dispatchers</span><span class="p">.</span><span class="nc">Default</span><span class="p">)</span> <span class="p">{</span>
+            <span class="k">return</span><span class="nd">@withContext</span> <span class="nf">doHardMaths</span><span class="p">()</span>
+        <span class="p">}</span>
+    <span class="p">}</span>
+
+    <span class="c1">// waste some CPU cycles</span>
+    <span class="k">private</span> <span class="k">fun</span> <span class="nf">doHardMaths</span><span class="p">():</span> <span class="nc">Long</span> <span class="p">{</span>
+        <span class="kd">var</span> <span class="py">count</span> <span class="p">=</span> <span class="mf">0.0</span>
+        <span class="k">for</span> <span class="p">(</span><span class="n">i</span> <span class="k">in</span> <span class="mi">1</span><span class="o">..</span><span class="mi">100_000_000</span><span class="p">)</span> <span class="p">{</span>
+            <span class="n">count</span> <span class="p">+=</span> <span class="nf">sqrt</span><span class="p">(</span><span class="n">i</span><span class="p">.</span><span class="nf">toDouble</span><span class="p">())</span>
+        <span class="p">}</span>
+        <span class="k">return</span> <span class="n">count</span><span class="p">.</span><span class="nf">toLong</span><span class="p">()</span>
+    <span class="p">}</span>
+<span class="p">}</span>
+
+</code></pre></div></div>
+
+<h3 id="what-are-my-options">What are my options?</h3>
+<p>There are multiple approaches to unit testing a <code class="language-plaintext highlighter-rouge">suspend</code> function. But crucially, since you are calling a <code class="language-plaintext highlighter-rouge">suspend</code> function, you’ll need to use a coroutine builder. There’s a few to choose from:</p>
+
+<ol>
+  <li><code class="language-plaintext highlighter-rouge">kotlinx.coroutines.runBlocking</code> ❌</li>
+  <li><code class="language-plaintext highlighter-rouge">kotlinx.coroutines.test.runBlockingTest</code> ❌</li>
+  <li><code class="language-plaintext highlighter-rouge">kotlinx.coroutines.test.TestCoroutineDispatcher.runBlockingTest</code> ✅</li>
+</ol>
+
+<p>🤔 If you’re looking at the three options and wondering why they have such similar names, what the differences are and why they don’t all work, I don’t blame you. It’s confusing! And worse still, some will work for some <code class="language-plaintext highlighter-rouge">suspend</code> functions but not for others.</p>
+
+<p>Let’s go through each in turn and highlight the problem with that approach before finally explaining why the <code class="language-plaintext highlighter-rouge">TestCoroutineDispatcher.runBlockingTest</code> approach is a good one.</p>
+
+<h3 id="runblocking-"><code class="language-plaintext highlighter-rouge">runBlocking</code> ❌</h3>
+<div class="language-kotlin highlighter-rouge"><div class="highlight"><pre class="highlight"><code>
+<span class="nd">@Test</span>
+<span class="k">fun</span> <span class="nf">useRunBlocking</span><span class="p">()</span> <span class="p">=</span> <span class="n">runBlocking</span><span class="p">&lt;</span><span class="nc">Unit</span><span class="p">&gt;</span> <span class="p">{</span>
+   <span class="kd">val</span> <span class="py">heavyWorker</span> <span class="p">=</span> <span class="nc">HeavyWorker</span><span class="p">()</span>
+   <span class="kd">val</span> <span class="py">expected</span> <span class="p">=</span> <span class="mi">666666671666</span>
+   <span class="kd">val</span> <span class="py">result</span> <span class="p">=</span> <span class="n">heavyWorker</span><span class="p">.</span><span class="nf">heavyOperation</span><span class="p">()</span>
+   <span class="nf">assertEquals</span><span class="p">(</span><span class="n">expected</span><span class="p">,</span> <span class="n">result</span><span class="p">)</span>
+<span class="p">}</span>
+
+</code></pre></div></div>
+
+<p>In this example, even with the long operation, the unit test will patiently wait for the coroutine’s completion before successfully passing. Depending on your hardware, this might take a few seconds to complete.</p>
+
+<p>But crucially, it does pass. 🎉</p>
+
+<p>OK, that was too easy. Let’s make things a bit trickier and see where <code class="language-plaintext highlighter-rouge">runBlocking</code> begins to fail us. Let’s see what happens if the heavy worker code had reason to <code class="language-plaintext highlighter-rouge">delay()</code> for 30 seconds during its execution.</p>
+
+<div class="language-kotlin highlighter-rouge"><div class="highlight"><pre class="highlight"><code>
+<span class="k">suspend</span> <span class="k">fun</span> <span class="nf">heavyOperation</span><span class="p">():</span> <span class="nc">Long</span> <span class="p">{</span>
+    <span class="k">return</span> <span class="nf">withContext</span><span class="p">(</span><span class="nc">Dispatchers</span><span class="p">.</span><span class="nc">Default</span><span class="p">)</span> <span class="p">{</span>
+        <span class="nf">delay</span><span class="p">(</span><span class="mi">30_000</span><span class="p">)</span>
+        <span class="k">return</span><span class="nd">@withContext</span> <span class="nf">doHardMaths</span><span class="p">()</span>
+    <span class="p">}</span>
+<span class="p">}</span>
+
+</code></pre></div></div>
+
+<p>In this case, <code class="language-plaintext highlighter-rouge">runBlocking&lt;Unit&gt;</code> waits for the entirety of the <code class="language-plaintext highlighter-rouge">delay</code> period, meaning <strong>your unit test takes an additional 30s to run</strong> on top of the time it actually takes to crunch the numbers.</p>
+
+<ul>
+  <li>Unit test still passes 👍</li>
+  <li>Adds 30s to the unit test execution time 👎</li>
+</ul>
+
+<h2 id="runblockingtest-">runBlockingTest ❌</h2>
+
+<div class="language-kotlin highlighter-rouge"><div class="highlight"><pre class="highlight"><code>
+<span class="nd">@Test</span>
+<span class="k">fun</span> <span class="nf">useRunBlockingTest</span><span class="p">()</span> <span class="p">=</span> <span class="nf">runBlockingTest</span> <span class="p">{</span>
+    <span class="kd">val</span> <span class="py">heavyWorker</span> <span class="p">=</span> <span class="nc">HeavyWorker</span><span class="p">()</span>
+    <span class="kd">val</span> <span class="py">expected</span> <span class="p">=</span> <span class="mi">666666671666</span>
+    <span class="kd">val</span> <span class="py">result</span> <span class="p">=</span> <span class="n">heavyWorker</span><span class="p">.</span><span class="nf">heavyOperation</span><span class="p">()</span>
+    <span class="nf">assertEquals</span><span class="p">(</span><span class="n">expected</span><span class="p">,</span> <span class="n">result</span><span class="p">)</span>
+<span class="p">}</span>
+
+</code></pre></div></div>
+
+<p><a href="https://github.com/Kotlin/kotlinx.coroutines/tree/master/kotlinx-coroutines-test#runblockingtest"><code class="language-plaintext highlighter-rouge">runBlockingTest</code></a> was introduced as a newer coroutine builder than <code class="language-plaintext highlighter-rouge">runBlocking</code>, specifically to help improve in areas such as not having to wait for the full <code class="language-plaintext highlighter-rouge">delay</code> period. Other features listed:</p>
+
+<ul>
+  <li>Auto-advancing of time for regular suspend functions</li>
+  <li>Explicit time control for testing multiple coroutines</li>
+  <li>Eager execution of launch or async code blocks</li>
+  <li>Pause, manually advance, and restart the execution of coroutines in a test</li>
+  <li>Report uncaught exceptions as test failures</li>
+</ul>
+
+<p>This is all sounding really great, and likely to improve some areas of testing massively. However, it doesn’t work for this code 😢</p>
+
+<p>Specifically, the test will fail with the following reason:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>java.lang.IllegalStateException: This job has not completed yet
+
+at kotlinx.coroutines.JobSupport.getCompletionExceptionOrNull(JobSupport.kt:1128)
+at kotlinx.coroutines.test.TestBuildersKt.runBlockingTest(TestBuilders.kt:53)
+at kotlinx.coroutines.test.TestBuildersKt.runBlockingTest$default(TestBuilders.kt:45)
+at com.cdrussell.coroutines.testing.HeavyWorkerTest.useRunBlockingTest(HeavyWorkerTest.kt:25)
+...
+</code></pre></div></div>
+
+<p><code class="language-plaintext highlighter-rouge">runBlockingTest</code> is smart enough to realise that you have a job started during your unit testing and that it hasn’t finished yet.</p>
+
+<p>The fact that the unit test finishes before the invoked <code class="language-plaintext highlighter-rouge">Job</code> finishes is bad. Your unit test which was stable albeit a bit slow using <code class="language-plaintext highlighter-rouge">runBlocking</code> now breaks. That’s not much of an improvement 😞.</p>
+
+<h3 id="why-doesnt-this-work-">Why Doesn’t This Work? 😕</h3>
+<p>This feels like it <em>should</em> work, and I don’t know why it doesn’t. Maybe it’s a bug in the current implementation of <code class="language-plaintext highlighter-rouge">runBlockingTest</code>. Maybe I’m trying to get it to do do something it isn’t designed to do. I’ve reached out to some folks who are building this to clarify.</p>
+
+<p><strong>UPDATE:</strong>
+Manuel confirmed that the above example <em>should</em> work, and indeed, <code class="language-plaintext highlighter-rouge">runBlockingTest</code> should work in all cases where you currently use <code class="language-plaintext highlighter-rouge">runBlocking</code>.</p>
+
+<div class="jekyll-twitter-plugin"><blockquote class="twitter-tweet" data-width="500"><p lang="en" dir="ltr">The expectation is right, it should work. There&#39;s an open issue about this: <a href="https://t.co/HGDX9XM3NB">https://t.co/HGDX9XM3NB</a></p>&mdash; Manuel Vivo (@manuelvicnt) <a href="https://twitter.com/manuelvicnt/status/1193827122357448709?ref_src=twsrc%5Etfw">November 11, 2019</a></blockquote>
+<script async="" src="https://platform.twitter.com/widgets.js" charset="utf-8"></script>
+</div>
+<div class="jekyll-twitter-plugin"><blockquote class="twitter-tweet" data-width="500"><p lang="en" dir="ltr">You&#39;d still need to inject a TCD if a new coroutine gets created in code under test. Moving to a different thread (e.g. using `withContext` in a suspend fun) should pass.<br /><br />Basically, it should work for all those cases you currently use `runBlocking`.</p>&mdash; Manuel Vivo (@manuelvicnt) <a href="https://twitter.com/manuelvicnt/status/1193831513797922816?ref_src=twsrc%5Etfw">November 11, 2019</a></blockquote>
+<script async="" src="https://platform.twitter.com/widgets.js" charset="utf-8"></script>
+</div>
+
+<p>Injecting dispatchers shouldn’t be required for this scenario; <code class="language-plaintext highlighter-rouge">runBlockingTest</code> should work on its own. However, injecting dispatchers will still be required when calling a function which launches a coroutine; there will be a follow-up blog post on testing this scenario.</p>
+
+<p>So watch https://github.com/Kotlin/kotlinx.coroutines/issues/1204 for updates on when that is resolved.</p>
+
+<h2 id="testcoroutinedispatcherrunblockingtest-">TestCoroutineDispatcher.runBlockingTest ✅</h2>
+<p>This approach is very similar to the one we just tried (and failed) to use, but with a crucial difference; we’ll provide alternative coroutine dispatchers when running in a unit test to those we’d use in production.</p>
+
+<p>And after providing an alternative coroutine dispatcher, used only when unit testing, we’ll make use of the dispatcher’s <code class="language-plaintext highlighter-rouge">runBlockingTest</code> builder.</p>
+
+<p>Let’s see what’s required.</p>
+
+<h3 id="injecting-our-dispatchers">Injecting our Dispatchers</h3>
+<p>The conclusion I’ve drawn is that <strong>we need to inject our dispatchers</strong>. I tried to find alternatives to doing this, as I don’t love having to inject dispatchers into production code, but I can’t find an alternative; it seems necessary.</p>
+
+<p><img src="/images/always-inject-dispatchers.png" alt="Image from Android Dev Summit 2019 showing a slide with &quot;You should ALWAYS inject Dispatchers&quot;" /></p>
+
+<p>And it seems Sean McQuillan and Manuel Vivo agree ☝️; this was taken from their 2019 Android Dev Summit talk <a href="https://www.youtube.com/watch?v=KMb0Fs8rCRs">“Testing Coroutines on Android”</a></p>
+
+<p>What does it mean to inject our dispatchers? Let’s revisit our production code.</p>
+
+<div class="language-kotlin highlighter-rouge"><div class="highlight"><pre class="highlight"><code>
+<span class="k">suspend</span> <span class="k">fun</span> <span class="nf">heavyOperation</span><span class="p">():</span> <span class="nc">Long</span> <span class="p">{</span>
+    <span class="k">return</span> <span class="nf">withContext</span><span class="p">(</span><span class="nc">Dispatchers</span><span class="p">.</span><span class="nc">Default</span><span class="p">)</span> <span class="p">{</span>
+        <span class="k">return</span><span class="nd">@withContext</span> <span class="nf">doHardMaths</span><span class="p">()</span>
+    <span class="p">}</span>
+<span class="p">}</span>
+
+</code></pre></div></div>
+
+<p>We have a hardcoded dispatcher here, <code class="language-plaintext highlighter-rouge">Dispatchers.Default</code>, which cannot be changed. We cannot provide an alternative dispatcher under any condition, not even when unit testing. And it turns out that providing an alternative dispatcher during unit testing is <em>exactly</em> what we need.</p>
+
+<p>In order to change the dispatcher that is used when unit testing, we need a way to <em>inject</em> the dispatcher into our <code class="language-plaintext highlighter-rouge">HeavyWorker</code> production class.</p>
+
+<h3 id="dispatcherprovider">DispatcherProvider</h3>
+<p>In the example above, we used <code class="language-plaintext highlighter-rouge">Dispatchers.Default</code> but we know there are other common dispatchers that we might encounter. As such, let’s define an interface which will allow classes to obtain whichever dispatcher they require.</p>
+
+<div class="language-kotlin highlighter-rouge"><div class="highlight"><pre class="highlight"><code>
+<span class="kd">interface</span> <span class="nc">DispatcherProvider</span> <span class="p">{</span>
+
+    <span class="k">fun</span> <span class="nf">main</span><span class="p">():</span> <span class="nc">CoroutineDispatcher</span> <span class="p">=</span> <span class="nc">Dispatchers</span><span class="p">.</span><span class="nc">Main</span>
+    <span class="k">fun</span> <span class="nf">default</span><span class="p">():</span> <span class="nc">CoroutineDispatcher</span> <span class="p">=</span> <span class="nc">Dispatchers</span><span class="p">.</span><span class="nc">Default</span>
+    <span class="k">fun</span> <span class="nf">io</span><span class="p">():</span> <span class="nc">CoroutineDispatcher</span> <span class="p">=</span> <span class="nc">Dispatchers</span><span class="p">.</span><span class="nc">IO</span>
+    <span class="k">fun</span> <span class="nf">unconfined</span><span class="p">():</span> <span class="nc">CoroutineDispatcher</span> <span class="p">=</span> <span class="nc">Dispatchers</span><span class="p">.</span><span class="nc">Unconfined</span>
+
+<span class="p">}</span>
+
+<span class="kd">class</span> <span class="nc">DefaultDispatcherProvider</span> <span class="p">:</span> <span class="nc">DispatcherProvider</span>
+
+</code></pre></div></div>
+
+<p>We define the interface and provide functions for the dispatchers, each of which have a default implementation.</p>
+
+<ul>
+  <li><code class="language-plaintext highlighter-rouge">main()</code> –&gt; <code class="language-plaintext highlighter-rouge">Dispatchers.Main</code>,</li>
+  <li><code class="language-plaintext highlighter-rouge">default()</code> –&gt; <code class="language-plaintext highlighter-rouge">Dispatchers.Default</code>,</li>
+  <li><code class="language-plaintext highlighter-rouge">io()</code> –&gt; <code class="language-plaintext highlighter-rouge">Dispatchers.IO</code></li>
+  <li><code class="language-plaintext highlighter-rouge">unconfined()</code> –&gt; <code class="language-plaintext highlighter-rouge">Dispatchers.Unconfined</code></li>
+</ul>
+
+<p>Additionally, we define a <code class="language-plaintext highlighter-rouge">DefaultDispatcherProvider</code> default implementation of the interface; this is what we’ll use in our production code.</p>
+
+<p>In production, we’ll always use this default dispatcher provider, which will always result in using <code class="language-plaintext highlighter-rouge">Dispatchers.Main</code>, <code class="language-plaintext highlighter-rouge">Dispatchers.IO</code>  etc…, and the production behavior will be as it always was.</p>
+
+<p>In unit testing, however, we will not use this default dispatcher provider; we will provide an alternative version.</p>
+
+<h3 id="injecting-dispatcherprovider">Injecting DispatcherProvider</h3>
+<p>Now that we have interface defined, we need to modify <code class="language-plaintext highlighter-rouge">HeavyWorker</code> class to make use of the interface instead of fetching the dispatchers in its current hardcoded fashion. To do this, we can inject the interface into the constructor.</p>
+
+<div class="language-kotlin highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="kd">class</span> <span class="nc">HeavyWorker</span><span class="p">(</span><span class="k">private</span> <span class="kd">val</span> <span class="py">dispatchers</span><span class="p">:</span> <span class="nc">DispatcherProvider</span> <span class="p">=</span> <span class="nc">DefaultDispatcherProvider</span><span class="p">())</span> <span class="p">{</span>
+
+    <span class="k">suspend</span> <span class="k">fun</span> <span class="nf">heavyOperation</span><span class="p">():</span> <span class="nc">Long</span> <span class="p">{</span>
+        <span class="k">return</span> <span class="nf">withContext</span><span class="p">(</span><span class="n">dispatchers</span><span class="p">.</span><span class="nf">default</span><span class="p">())</span> <span class="p">{</span>
+            <span class="nf">delay</span><span class="p">(</span><span class="mi">30_000</span><span class="p">)</span>
+            <span class="k">return</span><span class="nd">@withContext</span> <span class="nf">doHardMaths</span><span class="p">()</span>
+        <span class="p">}</span>
+    <span class="p">}</span>
+    
+<span class="p">}</span>
+</code></pre></div></div>
+
+<h4 id="constructor-parameter">Constructor parameter</h4>
+<p>Since you are specifying the default implementation of the provider should be used in production, you never have to actually pass a parameter when instantiating this class in production. <code class="language-plaintext highlighter-rouge">HeavyWorker()</code> is still a valid way to construct the class, just as it was before.</p>
+
+<h4 id="no-longer-hardcoding-dispatchers">No longer hardcoding dispatchers</h4>
+<p>We no longer hardcode dispatchers to use <code class="language-plaintext highlighter-rouge">Dispatchers.Default</code> and instead use the provided <code class="language-plaintext highlighter-rouge">dispatchers.default()</code>. To be clear, the production behaviour here would use <code class="language-plaintext highlighter-rouge">DefaultDispatcherProvider</code> by default, and therefore no behavioural changes have happened in production 😌.</p>
+
+<h4 id="providing-alternative-dispatcher-provider-during-unit-testing">Providing alternative dispatcher provider during unit testing</h4>
+<p>We now define an alternative dispatcher provider that we’ll use during unit testing.</p>
+
+<div class="language-kotlin highlighter-rouge"><div class="highlight"><pre class="highlight"><code>
+ <span class="kd">val</span> <span class="py">testDispatcherProvider</span> <span class="p">=</span> <span class="kd">object</span> <span class="err">: </span><span class="nc">DispatcherProvider</span> <span class="p">{</span>
+    <span class="k">override</span> <span class="k">fun</span> <span class="nf">default</span><span class="p">():</span> <span class="nc">CoroutineDispatcher</span> <span class="p">=</span> <span class="n">testDispatcher</span>
+    <span class="k">override</span> <span class="k">fun</span> <span class="nf">io</span><span class="p">():</span> <span class="nc">CoroutineDispatcher</span> <span class="p">=</span> <span class="n">testDispatcher</span>
+    <span class="k">override</span> <span class="k">fun</span> <span class="nf">main</span><span class="p">():</span> <span class="nc">CoroutineDispatcher</span> <span class="p">=</span> <span class="n">testDispatcher</span>
+    <span class="k">override</span> <span class="k">fun</span> <span class="nf">unconfined</span><span class="p">():</span> <span class="nc">CoroutineDispatcher</span> <span class="p">=</span> <span class="n">testDispatcher</span>
+<span class="p">}</span>
+
+</code></pre></div></div>
+
+<p>You can define this wherever you like so long as it has access to the test dispatcher, but I chose to add it inside the <code class="language-plaintext highlighter-rouge">CoroutineTestRule</code> itself.</p>
+
+<div class="language-kotlin highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="nd">@ExperimentalCoroutinesApi</span>
+<span class="kd">class</span> <span class="nc">CoroutineTestRule</span><span class="p">(</span><span class="kd">val</span> <span class="py">testDispatcher</span><span class="p">:</span> <span class="nc">TestCoroutineDispatcher</span> <span class="p">=</span> <span class="nc">TestCoroutineDispatcher</span><span class="p">())</span> <span class="p">:</span> <span class="nc">TestWatcher</span><span class="p">()</span> <span class="p">{</span>
+
+    <span class="kd">val</span> <span class="py">testDispatcherProvider</span> <span class="p">=</span> <span class="kd">object</span> <span class="err">: </span><span class="nc">DispatcherProvider</span> <span class="p">{</span>
+        <span class="k">override</span> <span class="k">fun</span> <span class="nf">default</span><span class="p">():</span> <span class="nc">CoroutineDispatcher</span> <span class="p">=</span> <span class="n">testDispatcher</span>
+        <span class="k">override</span> <span class="k">fun</span> <span class="nf">io</span><span class="p">():</span> <span class="nc">CoroutineDispatcher</span> <span class="p">=</span> <span class="n">testDispatcher</span>
+        <span class="k">override</span> <span class="k">fun</span> <span class="nf">main</span><span class="p">():</span> <span class="nc">CoroutineDispatcher</span> <span class="p">=</span> <span class="n">testDispatcher</span>
+        <span class="k">override</span> <span class="k">fun</span> <span class="nf">unconfined</span><span class="p">():</span> <span class="nc">CoroutineDispatcher</span> <span class="p">=</span> <span class="n">testDispatcher</span>
+    <span class="p">}</span>
+
+    <span class="k">override</span> <span class="k">fun</span> <span class="nf">starting</span><span class="p">(</span><span class="n">description</span><span class="p">:</span> <span class="nc">Description</span><span class="p">?)</span> <span class="p">{</span>
+        <span class="k">super</span><span class="p">.</span><span class="nf">starting</span><span class="p">(</span><span class="n">description</span><span class="p">)</span>
+        <span class="nc">Dispatchers</span><span class="p">.</span><span class="nf">setMain</span><span class="p">(</span><span class="n">testDispatcher</span><span class="p">)</span>
+    <span class="p">}</span>
+
+    <span class="k">override</span> <span class="k">fun</span> <span class="nf">finished</span><span class="p">(</span><span class="n">description</span><span class="p">:</span> <span class="nc">Description</span><span class="p">?)</span> <span class="p">{</span>
+        <span class="k">super</span><span class="p">.</span><span class="nf">finished</span><span class="p">(</span><span class="n">description</span><span class="p">)</span>
+        <span class="nc">Dispatchers</span><span class="p">.</span><span class="nf">resetMain</span><span class="p">()</span>
+        <span class="n">testDispatcher</span><span class="p">.</span><span class="nf">cleanupTestCoroutines</span><span class="p">()</span>
+    <span class="p">}</span>
+<span class="p">}</span>
+
+</code></pre></div></div>
+
+<h3 id="writing-the-test">Writing the test</h3>
+<div class="language-kotlin highlighter-rouge"><div class="highlight"><pre class="highlight"><code>
+<span class="nd">@ExperimentalCoroutinesApi</span>
+<span class="kd">class</span> <span class="nc">HeavyWorkerTest</span> <span class="p">{</span>
+
+    <span class="err">@</span><span class="k">get</span><span class="p">:</span><span class="nc">Rule</span>
+    <span class="kd">var</span> <span class="py">coroutinesTestRule</span> <span class="p">=</span> <span class="nc">CoroutineTestRule</span><span class="p">()</span>
+
+    <span class="nd">@Test</span>
+    <span class="k">fun</span> <span class="nf">useTestCoroutineDispatcherRunBlockingTest</span><span class="p">()</span> <span class="p">=</span> <span class="n">coroutinesTestRule</span><span class="p">.</span><span class="n">testDispatcher</span><span class="p">.</span><span class="nf">runBlockingTest</span> <span class="p">{</span>
+        <span class="kd">val</span> <span class="py">heavyWorker</span> <span class="p">=</span> <span class="nc">HeavyWorker</span><span class="p">(</span><span class="n">coroutinesTestRule</span><span class="p">.</span><span class="n">testDispatcherProvider</span><span class="p">)</span>
+        <span class="kd">val</span> <span class="py">expected</span> <span class="p">=</span> <span class="mi">666666671666</span>
+        <span class="kd">val</span> <span class="py">result</span> <span class="p">=</span> <span class="n">heavyWorker</span><span class="p">.</span><span class="nf">heavyOperation</span><span class="p">()</span>
+        <span class="nf">assertEquals</span><span class="p">(</span><span class="n">expected</span><span class="p">,</span> <span class="n">result</span><span class="p">)</span>
+    <span class="p">}</span>
+
+<span class="p">}</span>
+
+</code></pre></div></div>
+
+<p>Note:</p>
+
+<ul>
+  <li>We use <code class="language-plaintext highlighter-rouge">runBlockingTest</code> that we obtain from the <code class="language-plaintext highlighter-rouge">TestCoroutineDispatcher</code>, which is inside the <code class="language-plaintext highlighter-rouge">CoroutineTestRule</code>.</li>
+  <li>We pass the <code class="language-plaintext highlighter-rouge">testDispatcherProvider</code> from inside the <code class="language-plaintext highlighter-rouge">CoroutineTestRule</code> to the <code class="language-plaintext highlighter-rouge">HeavyWorker</code>’s constructor.</li>
+  <li>The test passes ✅</li>
+  <li>It doesn’t wait 30s for the delay to finish! 🙏</li>
+</ul>
+
+<p>Using <code class="language-plaintext highlighter-rouge">TestCoroutineDispatcher.runBlockingTest</code> as our coroutine builder, and injecting the test dispatcher, allows us full control over the coroutine jobs created when unit testing.</p>
+
+<p>It allows us to achieve the reliability we need, combined with the speed in not having to wait for delays to end.</p>
+
+<h2 id="summary">Summary</h2>
+<p>In this post, we saw how to write a reliable and fast unit test for code which uses Kotlin coroutines; specifically, how to unit test a <code class="language-plaintext highlighter-rouge">suspend</code> function.</p>
+
+<p>We saw that:</p>
+
+<ul>
+  <li>😞 <code class="language-plaintext highlighter-rouge">runBlocking</code> worked for us, but could result in slow tests.</li>
+  <li>😢 <code class="language-plaintext highlighter-rouge">runBlockingTest</code> didn’t work at all.</li>
+  <li>😎 <code class="language-plaintext highlighter-rouge">TestCoroutineDispatcher.runBlockingTest</code> worked, so long as we can inject coroutine dispatchers to our class under test.</li>
+</ul>
+
+<h2 id="links">Links</h2>
+
+<ul>
+  <li><a href="https://github.com/CDRussell/testing-coroutines">Source code</a></li>
+  <li><a href="https://www.youtube.com/watch?v=KMb0Fs8rCRs">Testing Coroutines on Android - Android Dev Summit</a></li>
+  <li><a href="https://github.com/Kotlin/kotlinx.coroutines/tree/master/kotlinx-coroutines-test#runblockingtest">runBlockingTest</a></li>
+  <li><a href="https://github.com/Kotlin/kotlinx.coroutines/tree/master/kotlinx-coroutines-test">kotlinx-coroutines-test</a></li>
+</ul>
+
+
+<a href='https://cdrussell.github.io//'>Home</a>
+
+
+      </section>
+    </div>
+    <footer>
+    </footer>
+    <!--[if !IE]><script>fixScale(document);</script><![endif]-->
+  </body>
+</html>

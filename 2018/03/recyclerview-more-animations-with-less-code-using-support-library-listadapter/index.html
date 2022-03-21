@@ -1,0 +1,232 @@
+<!doctype html>
+<html lang="en-US">
+  <head>
+    <meta charset="utf-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+
+<!-- Begin Jekyll SEO tag v2.7.1 -->
+<title>RecyclerView — More Animations with Less Code using Support Library ListAdapter | craigrussell</title>
+<meta name="generator" content="Jekyll v4.2.1" />
+<meta property="og:title" content="RecyclerView — More Animations with Less Code using Support Library ListAdapter" />
+<meta name="author" content="Craig Russell" />
+<meta property="og:locale" content="en_US" />
+<meta name="description" content="ListAdapter is a new class bundled in the 27.1.0 support library and simplifies the code required to work with RecyclerViews" />
+<meta property="og:description" content="ListAdapter is a new class bundled in the 27.1.0 support library and simplifies the code required to work with RecyclerViews" />
+<link rel="canonical" href="https://cdrussell.github.io//2018/03/recyclerview-more-animations-with-less-code-using-support-library-listadapter/" />
+<meta property="og:url" content="https://cdrussell.github.io//2018/03/recyclerview-more-animations-with-less-code-using-support-library-listadapter/" />
+<meta property="og:site_name" content="craigrussell" />
+<meta property="og:type" content="article" />
+<meta property="article:published_time" content="2018-03-21T00:00:00+00:00" />
+<meta name="twitter:card" content="summary" />
+<meta property="twitter:title" content="RecyclerView — More Animations with Less Code using Support Library ListAdapter" />
+<script type="application/ld+json">
+{"description":"ListAdapter is a new class bundled in the 27.1.0 support library and simplifies the code required to work with RecyclerViews","url":"https://cdrussell.github.io//2018/03/recyclerview-more-animations-with-less-code-using-support-library-listadapter/","@type":"BlogPosting","headline":"RecyclerView — More Animations with Less Code using Support Library ListAdapter","dateModified":"2018-03-21T00:00:00+00:00","datePublished":"2018-03-21T00:00:00+00:00","mainEntityOfPage":{"@type":"WebPage","@id":"https://cdrussell.github.io//2018/03/recyclerview-more-animations-with-less-code-using-support-library-listadapter/"},"author":{"@type":"Person","name":"Craig Russell"},"@context":"https://schema.org"}</script>
+<!-- End Jekyll SEO tag -->
+
+
+    <link rel="stylesheet" href="/assets/css/style.css?v=">
+    <script src="/assets/js/scale.fix.js"></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+
+    <!--[if lt IE 9]>
+    <script src="//html5shiv.googlecode.com/svn/trunk/html5.js"></script>
+    <![endif]-->
+
+    <!-- start custom head snippets, customize with your own _includes/head-custom.html file -->
+
+<!-- Setup Google Analytics -->
+
+
+
+<!-- You can set your favicon here -->
+<!-- link rel="shortcut icon" type="image/x-icon" href="/favicon.ico" -->
+
+<!-- end custom head snippets -->
+
+  </head>
+  <body>
+    <div class="wrapper">
+      <header >
+        <a href='https://cdrussell.github.io//'>
+          <h1>craigrussell</h1>
+          
+            <p>Technical blog from Craig Russell.</p>
+          
+        </a>
+
+        <nav>
+  <div style="
+         top: 0px;
+         right: 0px;
+         position: absolute">
+
+    <a href="/about">
+      <figure>
+        <img src="/images/me-round.png"
+             style="
+              height: 50px;
+              display: block;
+              margin-left: auto;
+              margin-right: auto;
+              "
+             alt="Photo of me, wearing a bright yellow t-shirt with a bright blue, cloudy sky in the background"
+        />
+        <figcaption style="text-align:justify" >About me</figcaption>
+      </figure>
+    </a>
+  </div>
+</nav>
+
+
+        <p> </p>
+      </header>
+      <section>
+
+      <p><em>This post describes how to use <code class="language-plaintext highlighter-rouge">ListAdapter</code>, a new addition from the Support Library, which simplifies the code required to work with <code class="language-plaintext highlighter-rouge">RecyclerViews</code>.</em></p>
+
+<p><a href="https://developer.android.com/reference/android/support/v7/recyclerview/extensions/ListAdapter.html?source=post_page---------------------------"><code class="language-plaintext highlighter-rouge">ListAdapter</code></a> is a new class bundled in the <a href="https://developer.android.com/topic/libraries/support-library/revisions.html?source=post_page---------------------------#27-1-0">27.1.0 support library</a> and simplifies the code required to work with RecyclerViews. The end result is less code for you to write and more <code class="language-plaintext highlighter-rouge">RecyclerView</code> animations happening for free.</p>
+
+<p>Why is it great? It’s great because it automatically stores the previous list of items and utilises <a href="https://developer.android.com/reference/android/support/v7/util/DiffUtil.html?source=post_page---------------------------">DiffUtil</a> under the hood to only update items in the recycler view which have changed. This typically means better performance as you avoid refreshing the whole list, and nicer animations because only items which change need to be redrawn.</p>
+
+<p>🎉 Since the new <a href="https://developer.android.com/reference/android/support/v7/recyclerview/extensions/ListAdapter.html?source=post_page---------------------------">ListAdapter</a> is built on top of <code class="language-plaintext highlighter-rouge">DiffUtil</code> it leverages it for you, meaning you have less callbacks to implement to achieve recycler view animations.</p>
+
+<p>Let’s say you have this class which represents a user’s tasks in a todo app. This example happens to be a <a href="https://developer.android.com/topic/libraries/architecture/room.html?source=post_page---------------------------">Room entity</a> but that’s not required.</p>
+
+<div class="language-kotlin highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="nd">@Entity</span>
+<span class="kd">data class</span> <span class="nc">Task</span><span class="p">(</span><span class="nd">@PrimaryKey</span><span class="p">(</span><span class="n">autoGenerate</span> <span class="p">=</span> <span class="k">true</span><span class="p">)</span> 
+                <span class="kd">var</span> <span class="py">id</span><span class="p">:</span> <span class="nc">Int</span> <span class="p">=</span> <span class="mi">0</span><span class="p">,</span> 
+                <span class="kd">var</span> <span class="py">title</span><span class="p">:</span> <span class="nc">String</span> <span class="p">=</span> <span class="s">""</span><span class="p">,</span> 
+                <span class="kd">var</span> <span class="py">completed</span><span class="p">:</span> <span class="nc">Boolean</span> <span class="p">=</span> <span class="k">false</span><span class="p">)</span>
+</code></pre></div></div>
+
+<h2 id="adapter--the-old-way">Adapter — The Old Way</h2>
+
+<p>To display a list of tasks in a <code class="language-plaintext highlighter-rouge">RecyclerView</code>, previously you would have written your adapter to inherit from <code class="language-plaintext highlighter-rouge">RecyclerView.Adapter&lt;ViewHolder&gt;</code> and it might have looked something like this.</p>
+
+<div class="language-kotlin highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="kd">class</span> <span class="nc">TaskListAdapter</span> <span class="p">:</span> <span class="nc">RecyclerView</span><span class="p">.</span><span class="nc">Adapter</span><span class="p">&lt;</span><span class="nc">ViewHolder</span><span class="p">&gt;()</span> <span class="p">{</span>
+
+    <span class="k">private</span> <span class="kd">val</span> <span class="py">tasks</span><span class="p">:</span> <span class="nc">MutableList</span><span class="p">&lt;</span><span class="nc">Task</span><span class="p">&gt;</span> <span class="p">=</span> <span class="nc">ArrayList</span><span class="p">()</span>
+
+    <span class="k">override</span> <span class="k">fun</span> <span class="nf">onCreateViewHolder</span><span class="p">(</span><span class="n">parent</span><span class="p">:</span> <span class="nc">ViewGroup</span><span class="p">,</span> <span class="n">viewType</span><span class="p">:</span> <span class="nc">Int</span><span class="p">):</span> <span class="nc">ViewHolder</span> <span class="p">{</span>
+        <span class="kd">val</span> <span class="py">inflater</span> <span class="p">=</span> <span class="nc">LayoutInflater</span><span class="p">.</span><span class="nf">from</span><span class="p">(</span><span class="n">parent</span><span class="p">.</span><span class="n">context</span><span class="p">)</span>
+        <span class="k">return</span> <span class="nc">ViewHolder</span><span class="p">(</span><span class="n">inflater</span><span class="p">.</span><span class="nf">inflate</span><span class="p">(</span><span class="nc">R</span><span class="p">.</span><span class="n">layout</span><span class="p">.</span><span class="n">item_task_row</span><span class="p">,</span> <span class="n">parent</span><span class="p">,</span> <span class="k">false</span><span class="p">))</span>
+    <span class="p">}</span>
+
+    <span class="k">override</span> <span class="k">fun</span> <span class="nf">onBindViewHolder</span><span class="p">(</span><span class="n">holder</span><span class="p">:</span> <span class="nc">ViewHolder</span><span class="p">,</span> <span class="n">position</span><span class="p">:</span> <span class="nc">Int</span><span class="p">)</span> <span class="p">{</span>
+        <span class="n">holder</span><span class="p">.</span><span class="nf">bind</span><span class="p">(</span><span class="n">tasks</span><span class="p">[</span><span class="n">position</span><span class="p">])</span>
+    <span class="p">}</span>
+
+    <span class="k">override</span> <span class="k">fun</span> <span class="nf">getItemCount</span><span class="p">():</span> <span class="nc">Int</span> <span class="p">=</span> <span class="n">tasks</span><span class="p">.</span><span class="n">size</span>
+
+    <span class="k">fun</span> <span class="nf">addTask</span><span class="p">(</span><span class="n">task</span><span class="p">:</span> <span class="nc">Task</span><span class="p">)</span> <span class="p">{</span>
+        <span class="k">if</span> <span class="p">(!</span><span class="n">tasks</span><span class="p">.</span><span class="nf">contains</span><span class="p">(</span><span class="n">task</span><span class="p">))</span> <span class="p">{</span>
+            <span class="n">tasks</span><span class="p">.</span><span class="nf">add</span><span class="p">(</span><span class="n">task</span><span class="p">)</span>
+            <span class="nf">notifyItemInserted</span><span class="p">(</span><span class="n">tasks</span><span class="p">.</span><span class="n">size</span><span class="p">)</span>
+        <span class="p">}</span>
+    <span class="p">}</span>
+
+    <span class="kd">class</span> <span class="nc">ViewHolder</span><span class="p">(</span><span class="n">itemView</span><span class="p">:</span> <span class="nc">View</span><span class="p">)</span> <span class="p">:</span> <span class="nc">RecyclerView</span><span class="p">.</span><span class="nc">ViewHolder</span><span class="p">(</span><span class="n">itemView</span><span class="p">)</span> <span class="p">{</span>
+
+        <span class="k">fun</span> <span class="nf">bind</span><span class="p">(</span><span class="n">task</span><span class="p">:</span> <span class="nc">Task</span><span class="p">)</span> <span class="p">{</span>
+            <span class="n">itemView</span><span class="p">.</span><span class="n">taskTitle</span><span class="p">.</span><span class="n">text</span> <span class="p">=</span> <span class="n">task</span><span class="p">.</span><span class="n">title</span>
+        <span class="p">}</span>
+
+    <span class="p">}</span>
+<span class="p">}</span>
+</code></pre></div></div>
+
+<p>The biggest problem this code has is that it only handles adding new tasks and wouldn’t cope with deletions or edits. If we wanted to easily handle those cases as well, we could cheat and use <a href="https://developer.android.com/reference/android/support/v7/widget/RecyclerView.Adapter.html?source=post_page---------------------------#notifyDataSetChanged()">notifyDataSetChanged()</a> but we’d lose the nice animations. To handle them properly, we’d need to implement <code class="language-plaintext highlighter-rouge">DiffUtil</code> which is a bit more work.</p>
+
+<h2 id="diffutil">DiffUtil</h2>
+<p>If you use <code class="language-plaintext highlighter-rouge">ListAdapter</code> you won’t have to fully implement <code class="language-plaintext highlighter-rouge">DiffUtil</code>, but it’s still useful to know what problem is being solved for you.</p>
+
+<p><code class="language-plaintext highlighter-rouge">ListAdapter</code> is built on top of <code class="language-plaintext highlighter-rouge">DiffUtil</code> meaning it handles some of the diffing logic for you. If you aren’t familiar with <code class="language-plaintext highlighter-rouge">DiffUtil</code>, it was created to further encourage developers to let the <code class="language-plaintext highlighter-rouge">RecyclerView</code> only update the contents which changed; resulting in better performance when items are inserted, updated or deleted.</p>
+
+<p>If you are still using <code class="language-plaintext highlighter-rouge">notifyDataSetChanged()</code> then you are forcing the entire list to be redrawn and therefore not allowing Android the chance to show nice visual cues to the user as to what exactly just changed. Instead of reloading the entire list, you can use methods like <code class="language-plaintext highlighter-rouge">notifyItemInserted</code>, <code class="language-plaintext highlighter-rouge">notifyItemChanged</code> and <code class="language-plaintext highlighter-rouge">notifyItemRemoved</code>. These result in lovely animations but working out which method to invoke manually is non-trivial.</p>
+
+<p><code class="language-plaintext highlighter-rouge">DiffUtil</code> helps you by calculating which methods to invoke out of inserted/changed/removed.</p>
+
+<p><code class="language-plaintext highlighter-rouge">DiffUtil</code> is great but it still requires a bit of boilerplate to implement.</p>
+
+<h2 id="adapter--the-new-way">Adapter — The New Way</h2>
+<p>To make use of the new <code class="language-plaintext highlighter-rouge">ListAdapter</code> we would update the existing adapter so that it inherits <code class="language-plaintext highlighter-rouge">ListAdapter</code> and pass in the type of item it will show — Task in this case — as well as the <code class="language-plaintext highlighter-rouge">ViewHolder</code>.</p>
+
+<p>We no longer need to hold onto a reference of our item list as <code class="language-plaintext highlighter-rouge">ListAdapter</code> does this for you. Whenever you need your item list, you can call <code class="language-plaintext highlighter-rouge">getItem(int)</code>.</p>
+
+<h3 id="diffutilitemcallback">DiffUtil.ItemCallback</h3>
+<p>In the constructor, you need to provide a <a href="https://developer.android.com/reference/android/support/v7/util/DiffUtil.ItemCallback.html?source=post_page---------------------------"><code class="language-plaintext highlighter-rouge">DiffUtil.ItemCallback</code></a> which is a slimmed down version of the <code class="language-plaintext highlighter-rouge">DiffUtil</code> callbacks.</p>
+
+<div class="language-kotlin highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="kd">class</span> <span class="nc">TaskDiffCallback</span> <span class="p">:</span> <span class="nc">DiffUtil</span><span class="p">.</span><span class="nc">ItemCallback</span><span class="p">&lt;</span><span class="nc">Task</span><span class="p">&gt;()</span> <span class="p">{</span>
+    <span class="k">override</span> <span class="k">fun</span> <span class="nf">areItemsTheSame</span><span class="p">(</span><span class="n">oldItem</span><span class="p">:</span> <span class="nc">Task</span><span class="p">?,</span> <span class="n">newItem</span><span class="p">:</span> <span class="nc">Task</span><span class="p">?):</span> <span class="nc">Boolean</span> <span class="p">{</span>
+        <span class="k">return</span> <span class="n">oldItem</span><span class="o">?.</span><span class="n">id</span> <span class="p">==</span> <span class="n">newItem</span><span class="o">?.</span><span class="n">id</span>
+    <span class="p">}</span>
+
+    <span class="k">override</span> <span class="k">fun</span> <span class="nf">areContentsTheSame</span><span class="p">(</span><span class="n">oldItem</span><span class="p">:</span> <span class="nc">Task</span><span class="p">?,</span> <span class="n">newItem</span><span class="p">:</span> <span class="nc">Task</span><span class="p">?):</span> <span class="nc">Boolean</span> <span class="p">{</span>
+        <span class="k">return</span> <span class="n">oldItem</span> <span class="p">==</span> <span class="n">newItem</span>
+    <span class="p">}</span>
+<span class="p">}</span>
+</code></pre></div></div>
+
+<p><code class="language-plaintext highlighter-rouge">DiffUtil.ItemCallback</code> requires you to implement two functions: <code class="language-plaintext highlighter-rouge">areItemsTheSame</code> and <code class="language-plaintext highlighter-rouge">areContentsTheSame</code></p>
+
+<h3 id="areitemsthesame">areItemsTheSame</h3>
+<p><code class="language-plaintext highlighter-rouge">areItemsTheSame</code> hands you two items and asks you if they fundamentally represent the same object. In my case, I have a unique ID I can use to compare. If the IDs match, then I know the items are the same even if some of their other fields may differ.</p>
+
+<h3 id="arecontentsthesame">areContentsTheSame</h3>
+<p><code class="language-plaintext highlighter-rouge">areContentsTheSame</code> hands you two items again. This time, though, it asks you if the two items have the same content. If you decide your items do have the same content, then no redraw and no animation are required; you are already displaying the object and you are saying that nothing has changed.</p>
+
+<p>However, if you decide the contents are not the same, then the item will be redrawn on screen.</p>
+
+<h2 id="shiny-new-adapter">Shiny New Adapter</h2>
+<p>It’s not much different from the old adapter. We have a new superclass, we’ve deleted the list of items we were storing previously and we’ve ditched the manual <code class="language-plaintext highlighter-rouge">addTask()</code> method we had before. In the constructor, we pass in an instance of our <code class="language-plaintext highlighter-rouge">DiffUtil.ItemCallback</code>.</p>
+
+<div class="language-kotlin highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="kd">class</span> <span class="nc">TaskListAdapter</span><span class="p">(</span><span class="k">private</span> <span class="kd">val</span> <span class="py">clickListener</span><span class="p">:</span> <span class="p">(</span><span class="nc">Task</span><span class="p">)</span> <span class="p">-&gt;</span> <span class="nc">Unit</span><span class="p">)</span> <span class="p">:</span>
+    <span class="nc">ListAdapter</span><span class="p">&lt;</span><span class="nc">Task</span><span class="p">,</span> <span class="nc">ViewHolder</span><span class="p">&gt;(</span><span class="nc">TaskDiffCallback</span><span class="p">())</span> <span class="p">{</span>
+
+    <span class="k">override</span> <span class="k">fun</span> <span class="nf">onCreateViewHolder</span><span class="p">(</span><span class="n">parent</span><span class="p">:</span> <span class="nc">ViewGroup</span><span class="p">,</span> <span class="n">viewType</span><span class="p">:</span> <span class="nc">Int</span><span class="p">):</span> <span class="nc">ViewHolder</span> <span class="p">{</span>
+        <span class="kd">val</span> <span class="py">inflater</span> <span class="p">=</span> <span class="nc">LayoutInflater</span><span class="p">.</span><span class="nf">from</span><span class="p">(</span><span class="n">parent</span><span class="p">.</span><span class="n">context</span><span class="p">)</span>
+        <span class="k">return</span> <span class="nc">ViewHolder</span><span class="p">(</span><span class="n">inflater</span><span class="p">.</span><span class="nf">inflate</span><span class="p">(</span><span class="nc">R</span><span class="p">.</span><span class="n">layout</span><span class="p">.</span><span class="n">item_task_row</span><span class="p">,</span> <span class="n">parent</span><span class="p">,</span> <span class="k">false</span><span class="p">))</span>
+    <span class="p">}</span>
+
+    <span class="k">override</span> <span class="k">fun</span> <span class="nf">onBindViewHolder</span><span class="p">(</span><span class="n">holder</span><span class="p">:</span> <span class="nc">ViewHolder</span><span class="p">,</span> <span class="n">position</span><span class="p">:</span> <span class="nc">Int</span><span class="p">)</span> <span class="p">{</span>
+        <span class="n">holder</span><span class="p">.</span><span class="nf">bind</span><span class="p">(</span><span class="nf">getItem</span><span class="p">(</span><span class="n">position</span><span class="p">),</span> <span class="n">clickListener</span><span class="p">)</span>
+    <span class="p">}</span>
+        
+    <span class="kd">class</span> <span class="nc">ViewHolder</span><span class="p">(</span><span class="n">itemView</span><span class="p">:</span> <span class="nc">View</span><span class="p">)</span> <span class="p">:</span> <span class="nc">RecyclerView</span><span class="p">.</span><span class="nc">ViewHolder</span><span class="p">(</span><span class="n">itemView</span><span class="p">)</span> <span class="p">{</span>
+
+        <span class="k">fun</span> <span class="nf">bind</span><span class="p">(</span><span class="n">task</span><span class="p">:</span> <span class="nc">Task</span><span class="p">,</span> <span class="n">clickListener</span><span class="p">:</span> <span class="p">(</span><span class="nc">Task</span><span class="p">)</span> <span class="p">-&gt;</span> <span class="nc">Unit</span><span class="p">)</span> <span class="p">{</span>
+            <span class="n">itemView</span><span class="p">.</span><span class="n">taskTitle</span><span class="p">.</span><span class="n">text</span> <span class="p">=</span> <span class="n">task</span><span class="p">.</span><span class="n">title</span>
+            <span class="n">itemView</span><span class="p">.</span><span class="nf">setOnClickListener</span> <span class="p">{</span> <span class="nf">clickListener</span><span class="p">(</span><span class="n">task</span><span class="p">)</span> <span class="p">}</span>
+        <span class="p">}</span>
+    <span class="p">}</span>
+<span class="p">}</span>
+</code></pre></div></div>
+
+<h2 id="updating-the-adapter">Updating the Adapter</h2>
+<p>Whenever you need to update the adapter, you can provide the new list of items to it using the <code class="language-plaintext highlighter-rouge">submitList(List)</code> method.</p>
+
+<p>You aren’t tied into using <code class="language-plaintext highlighter-rouge">Room</code> or <code class="language-plaintext highlighter-rouge">LiveData</code> and so long as you can obtain an updated list, you can make use of <code class="language-plaintext highlighter-rouge">ListAdapter</code>.</p>
+
+<div class="language-kotlin highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="n">taskDao</span><span class="p">.</span><span class="nf">getAll</span><span class="p">().</span><span class="nf">observe</span><span class="p">(</span><span class="k">this</span><span class="p">,</span> <span class="nc">Observer</span><span class="p">&lt;</span><span class="nc">List</span><span class="p">&lt;</span><span class="nc">Task</span><span class="p">&gt;&gt;</span> <span class="p">{</span>
+    <span class="n">taskListAdapter</span><span class="p">.</span><span class="nf">submitList</span><span class="p">(</span><span class="n">it</span><span class="p">)</span>
+<span class="p">})</span>
+</code></pre></div></div>
+
+<p>But it sure is nice when you do use <code class="language-plaintext highlighter-rouge">Room</code> and <code class="language-plaintext highlighter-rouge">LiveData</code> 😎. Whenever you are notified of a change, just submit that straight to the adapter and it’ll take care of the rest.</p>
+
+<h2 id="summary">Summary</h2>
+<p><code class="language-plaintext highlighter-rouge">RecyclerView</code> is great. But it’s better when animations are shown as its contents are changed. You can cheat and update the entire list every time something changes but that’s usually not necessary. You can achieve better performance and those nice animations yourself with a bit of code.</p>
+
+<p>Or you can make use of <a href="https://developer.android.com/reference/android/support/v7/recyclerview/extensions/ListAdapter.html?source=post_page---------------------------">ListAdapter</a>. The end result is less code, more animations and happier users 😃.</p>
+
+
+<a href='https://cdrussell.github.io//'>Home</a>
+
+
+      </section>
+    </div>
+    <footer>
+    </footer>
+    <!--[if !IE]><script>fixScale(document);</script><![endif]-->
+  </body>
+</html>

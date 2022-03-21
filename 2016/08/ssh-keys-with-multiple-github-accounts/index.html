@@ -1,0 +1,278 @@
+<!doctype html>
+<html lang="en-US">
+  <head>
+    <meta charset="utf-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+
+<!-- Begin Jekyll SEO tag v2.7.1 -->
+<title>SSH Keys with Multiple GitHub Accounts | craigrussell</title>
+<meta name="generator" content="Jekyll v4.2.1" />
+<meta property="og:title" content="SSH Keys with Multiple GitHub Accounts" />
+<meta name="author" content="Craig Russell" />
+<meta property="og:locale" content="en_US" />
+<meta name="description" content="How to manage multiple SSH keys for different GitHub.com accounts so that you can access multiple accounts and projects, each with different credentials." />
+<meta property="og:description" content="How to manage multiple SSH keys for different GitHub.com accounts so that you can access multiple accounts and projects, each with different credentials." />
+<link rel="canonical" href="https://medium.com/@trionkidnapper/ssh-keys-with-multiple-github-accounts-c67db56f191e" />
+<meta property="og:url" content="https://medium.com/@trionkidnapper/ssh-keys-with-multiple-github-accounts-c67db56f191e" />
+<meta property="og:site_name" content="craigrussell" />
+<meta property="og:type" content="article" />
+<meta property="article:published_time" content="2016-08-10T00:26:52+00:00" />
+<meta name="twitter:card" content="summary" />
+<meta property="twitter:title" content="SSH Keys with Multiple GitHub Accounts" />
+<script type="application/ld+json">
+{"description":"How to manage multiple SSH keys for different GitHub.com accounts so that you can access multiple accounts and projects, each with different credentials.","url":"https://medium.com/@trionkidnapper/ssh-keys-with-multiple-github-accounts-c67db56f191e","@type":"BlogPosting","headline":"SSH Keys with Multiple GitHub Accounts","dateModified":"2016-08-10T00:26:52+00:00","datePublished":"2016-08-10T00:26:52+00:00","mainEntityOfPage":{"@type":"WebPage","@id":"https://medium.com/@trionkidnapper/ssh-keys-with-multiple-github-accounts-c67db56f191e"},"author":{"@type":"Person","name":"Craig Russell"},"@context":"https://schema.org"}</script>
+<!-- End Jekyll SEO tag -->
+
+
+    <link rel="stylesheet" href="/assets/css/style.css?v=">
+    <script src="/assets/js/scale.fix.js"></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+
+    <!--[if lt IE 9]>
+    <script src="//html5shiv.googlecode.com/svn/trunk/html5.js"></script>
+    <![endif]-->
+
+    <!-- start custom head snippets, customize with your own _includes/head-custom.html file -->
+
+<!-- Setup Google Analytics -->
+
+
+
+<!-- You can set your favicon here -->
+<!-- link rel="shortcut icon" type="image/x-icon" href="/favicon.ico" -->
+
+<!-- end custom head snippets -->
+
+  </head>
+  <body>
+    <div class="wrapper">
+      <header >
+        <a href='https://cdrussell.github.io//'>
+          <h1>craigrussell</h1>
+          
+            <p>Technical blog from Craig Russell.</p>
+          
+        </a>
+
+        <nav>
+  <div style="
+         top: 0px;
+         right: 0px;
+         position: absolute">
+
+    <a href="/about">
+      <figure>
+        <img src="/images/me-round.png"
+             style="
+              height: 50px;
+              display: block;
+              margin-left: auto;
+              margin-right: auto;
+              "
+             alt="Photo of me, wearing a bright yellow t-shirt with a bright blue, cloudy sky in the background"
+        />
+        <figcaption style="text-align:justify" >About me</figcaption>
+      </figure>
+    </a>
+  </div>
+</nav>
+
+
+        <p> </p>
+      </header>
+      <section>
+
+      <p>This article explains how to manage multiple SSH keys for different GitHub.com accounts so that you can access multiple accounts and projects, each with different credentials.</p>
+
+<p><img src="/images/multiple-ssh-keys-padlocks.jpeg" alt="So many keys! Many padlocks locked to a bridge" /></p>
+
+<p>These instructions focus on Mac OSX and GitHub.com specifically; be warned if you are using another OS or a different hosted git repository.</p>
+
+<p>If all goes well, you’ll likely be up and running within 30 minutes if you follow this guide.</p>
+
+<h3 id="who-has-multiple-ssh-keys">Who Has Multiple SSH Keys?</h3>
+
+<p>A freelancer with multiple clients is likely to face this problem if several clients each run their own GitHub.com projects and only want users to use a company-issued email address registered. As such, your existing GitHub user couldn’t simply be added to their projects and you need to register for a new GitHub account to access each.</p>
+
+<h3 id="whats-the-problem-with-multiple-sshkeys">What’s the Problem with Multiple SSH Keys?</h3>
+
+<p>If you have multiple GitHub.com accounts it can make it harder to organise your SSH keys such that you are pushing and pulling with the right credentials to the right repositories.</p>
+
+<p>When you attempt to pull or push code to a repo, the system will attempt to pick an SSH key to use and it won’t always match up. Often, it will just try the first key and for some projects you’ll see authentication problems as it is trying to connect with the wrong user.</p>
+
+<h3 id="the-solution">The Solution</h3>
+
+<ol>
+  <li>Create SSH keys for each GitHub.com account</li>
+  <li>Register the correct SSH keys with the correct GitHub.com account</li>
+  <li>Create a git config file</li>
+</ol>
+
+<p>The first two steps are the standard process; create an SSH key locally on your machine and then copy the public key information into your GitHub.com account settings.</p>
+
+<p>The ✨<em>magic</em> ✨ happens when you create the git config file in step 3.</p>
+
+<h3 id="backup-existingkeys">Backup Existing Keys</h3>
+
+<p>Back up your existing SSH keys. Even if you think you’ll be fine. Even if you think it’s OK if you were to lose them. Even if you think you don’t have any yet. Just make a backup of your <strong>~/.ssh</strong> just in case. Bad things happen sometimes.</p>
+
+<h3 id="creating-sshkeys">Creating SSH Keys</h3>
+
+<p>If you already have multiple SSH keys, you probably won’t need to make new ones. However, you might need to register them with <strong>ssh-agent</strong> if you haven’t done so already. If you are having problems, creating a new SSH key is quick and easy to do.</p>
+
+<h4 id="viewing-existingkeys"><strong>Viewing Existing Keys</strong></h4>
+
+<p>You can view all of the existing SSH keys at <strong>~/.ssh/</strong></p>
+
+<p>If you’ve followed SSH key creation steps before, you’ll likely have a file called <strong>id_rsa</strong> and another called <strong>id_rsa.pub</strong>; these are your private and public keys, respectively.</p>
+
+<p>If you already have all of the SSH keys you want, you can skip the creation steps. Otherwise, read on for instructions for creating one or more new keys.</p>
+
+<h4 id="creating-a-new-ssh-key"><strong>Creating a New SSH Key</strong></h4>
+
+<p>You create a new key by running the following command, substituting for your own email address:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>ssh-keygen -t rsa -b 4096 -C “_your_email@example.com”
+</code></pre></div></div>
+
+<p>You’ll be prompted to “_Enter file in which to save the key”. You should use the standard <strong>id_rsa</strong> prefix followed by a descriptive name for your key.</p>
+
+<p>So let’s assume you need to make accounts for a personal SSH key and a work one.</p>
+
+<ol>
+  <li>Call the first key <strong>id_rsa_personal</strong></li>
+  <li>Repeat the process again to create <strong>id_rsa_work</strong></li>
+</ol>
+
+<p>⚠️ Note that the prompt expects you to enter the path to the file as well; failing to add this will create the file in the current terminal directory which may not be what you want.</p>
+
+<p>The final step is to secure the keys with a passphrase. Do so.</p>
+
+<h4 id="registering-your-new-ssh-keys"><strong>Registering your new SSH Keys</strong></h4>
+
+<p>New keys need registered before they are useful. To register, we need to use <strong>ssh-agent</strong> and to use that, we need to first make sure it is running:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>eval "$(ssh-agent -s)"
+</code></pre></div></div>
+
+<p>Once running, you can then add your new keys. Repeat the following command for all new keys you have added, substituting the correct path to the private key. For example:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>ssh-add ~/.ssh/**_id_rsa_personal_**
+</code></pre></div></div>
+
+<h4 id="add-your-ssh-keys-to-githubcom"><strong>Add your SSH Keys to GitHub.com</strong></h4>
+
+<p>You can follow the <a href="https://help.github.com/articles/adding-a-new-ssh-key-to-your-github-account">GitHub Documentation</a> in case this process changes on their website. Currently, you want to copy your <strong>public</strong> key and paste it into the relevant section on your GitHub settings.</p>
+
+<p>To copy the public key to the clipboard, run the following, substituting for the correct filename:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>pbcopy &lt; ~/.ssh/**id_rsa_personal.pub**
+</code></pre></div></div>
+
+<p>⚠️ Note, you want to be <em>really</em> careful that you match up the correct key with the correct GitHub account otherwise you are in for a world of confusion. You see now why I recommend descriptive names for them?</p>
+
+<p>When signed in to GitHub.com (with the right account!) click on your avatar and choose <strong>settings</strong>. Choose <strong>SSH and GPG Keys</strong> from the menu, and click the <strong>New SSH Key</strong> button.</p>
+
+<p><img src="/images/multiple-ssh-keys-github.png" alt="Registering an SSH Key on GitHub.com" /></p>
+
+<p><em>Registering an SSH Key on GitHub.com</em></p>
+
+<p>Give it a descriptive title and then <strong>paste</strong> the contents of your clipboard (containing your public key information).</p>
+
+<p>Once done, you’d want to login to your <em>other</em> GitHub.com account and register the <em>other</em> public key. Repeat this for as many different accounts as you are managing.</p>
+
+<h3 id="create-a-git-config-file">Create a Git Config File</h3>
+
+<p>A config file is used to tell git which SSH key is to be used with which URLs.</p>
+
+<p>A git config file lives at <strong>~/.ssh/config</strong>. If the config file doesn’t yet exist, go ahead and create it:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>touch ~/.ssh/config
+</code></pre></div></div>
+
+<p>Here is an example from my <strong>~/.ssh/config</strong> file</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>Host me.github.com  
+HostName github.com  
+PreferredAuthentications publickey  
+IdentityFile ~/.ssh/id_rsa_personal
+
+Host github.com  
+HostName github.com  
+PreferredAuthentications publickey  
+IdentityFile ~/.ssh/id_rsa
+</code></pre></div></div>
+
+<p>Note that, although subtle, the first and fourth lines differ for each entry. By defining each account with a different <strong>Host</strong> value, you can specify which git URLs use which SSH key.</p>
+
+<p>Above, I specify that:</p>
+
+<ul>
+  <li>any git URL that uses <strong>me.github.com</strong> should use <strong>id_rsa_personal</strong></li>
+  <li>any git URL that uses <strong>github.com</strong> should use my <strong>id_rsa</strong> key.</li>
+</ul>
+
+<p>I have an SSH key for personal projects, and another key for everything else. You might need to add more than two entries into your config if you have additional accounts to manage.</p>
+
+<h3 id="cloning-projects">Cloning Projects</h3>
+
+<p>After following the steps above, there is only one thing left to do: clone a project.</p>
+
+<p>When cloning a project from GitHub using SSH, the URL format is</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>git@github.com:USERNAME/PROJECT.git
+</code></pre></div></div>
+
+<p>You can replace <strong>github.com</strong> with your custom specified <strong>Host</strong> from your config, depending on which account you are wanting to use.</p>
+
+<p>For example, let’s look at <a href="https://github.com/CDRussell/SurvivingPresenters">this project</a> from GitHub.</p>
+
+<p><img src="/images/multiple-ssh-keys-github2.png" alt="" /></p>
+
+<p>GitHub tells us that we should use this URL:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>git@github.com:CDRussell/SurvivingPresenters.git
+</code></pre></div></div>
+
+<p>To use our personal SSH key, we remember our setting from the <strong>~/.ssh/config</strong> file:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>Host **me.github.com**  
+HostName github.com  
+PreferredAuthentications publickey  
+IdentityFile ~/.ssh/id_rsa_personal
+</code></pre></div></div>
+
+<p>which tells us to use <strong>me.github.com</strong> instead of <strong>github.com.</strong> Therefore, we can use that URL instead to clone the project using the personal SSH key. For example:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>// uses standard SSH key  
+git clone git@github.com:CDRussell/SurvivingPresenters.git
+
+// uses personal SSH key  
+git clone git@me.github.com:CDRussell/SurvivingPresenters.git
+</code></pre></div></div>
+
+<h3 id="conclusion">Conclusion</h3>
+
+<p>If you followed along you hopefully now have everything you need to painlessly manage multiple projects hosted across different GitHub accounts.</p>
+
+<p>It is undoubtedly a little tricky to setup but now that you’ve done it, you won’t have to think too much about it again; just remember to clone the url with the correct <strong>git@XXX.github.com</strong> format depending on which account you want to use.</p>
+
+<hr />
+
+<p><em>Attributions</em></p>
+
+<ul>
+  <li>Padlock image: <a href="https://unsplash.com/photos/G3GL5lJygz8">Unsplash</a></li>
+</ul>
+
+
+<a href='https://cdrussell.github.io//'>Home</a>
+
+
+      </section>
+    </div>
+    <footer>
+    </footer>
+    <!--[if !IE]><script>fixScale(document);</script><![endif]-->
+  </body>
+</html>

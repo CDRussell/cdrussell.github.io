@@ -1,0 +1,220 @@
+<!doctype html>
+<html lang="en-US">
+  <head>
+    <meta charset="utf-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+
+<!-- Begin Jekyll SEO tag v2.7.1 -->
+<title>Comparing StandardTestDispatcher and UnconfinedTestDispatcher | craigrussell</title>
+<meta name="generator" content="Jekyll v4.2.1" />
+<meta property="og:title" content="Comparing StandardTestDispatcher and UnconfinedTestDispatcher" />
+<meta name="author" content="Craig Russell" />
+<meta property="og:locale" content="en_US" />
+<meta name="description" content="Describes the two provided coroutine test dispatchers, standard and unconfined, the difference between them and when to use each" />
+<meta property="og:description" content="Describes the two provided coroutine test dispatchers, standard and unconfined, the difference between them and when to use each" />
+<link rel="canonical" href="https://cdrussell.github.io//2022/01/19/comparing-standardtestdispatcher-and-unconfinedtestdispatcher" />
+<meta property="og:url" content="https://cdrussell.github.io//2022/01/19/comparing-standardtestdispatcher-and-unconfinedtestdispatcher" />
+<meta property="og:site_name" content="craigrussell" />
+<meta property="og:type" content="article" />
+<meta property="article:published_time" content="2022-01-19T16:19:00+00:00" />
+<meta name="twitter:card" content="summary" />
+<meta property="twitter:title" content="Comparing StandardTestDispatcher and UnconfinedTestDispatcher" />
+<script type="application/ld+json">
+{"description":"Describes the two provided coroutine test dispatchers, standard and unconfined, the difference between them and when to use each","url":"https://cdrussell.github.io//2022/01/19/comparing-standardtestdispatcher-and-unconfinedtestdispatcher","@type":"BlogPosting","headline":"Comparing StandardTestDispatcher and UnconfinedTestDispatcher","dateModified":"2022-01-19T16:19:00+00:00","datePublished":"2022-01-19T16:19:00+00:00","mainEntityOfPage":{"@type":"WebPage","@id":"https://cdrussell.github.io//2022/01/19/comparing-standardtestdispatcher-and-unconfinedtestdispatcher"},"author":{"@type":"Person","name":"Craig Russell"},"@context":"https://schema.org"}</script>
+<!-- End Jekyll SEO tag -->
+
+
+    <link rel="stylesheet" href="/assets/css/style.css?v=">
+    <script src="/assets/js/scale.fix.js"></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+
+    <!--[if lt IE 9]>
+    <script src="//html5shiv.googlecode.com/svn/trunk/html5.js"></script>
+    <![endif]-->
+
+    <!-- start custom head snippets, customize with your own _includes/head-custom.html file -->
+
+<!-- Setup Google Analytics -->
+
+
+
+<!-- You can set your favicon here -->
+<!-- link rel="shortcut icon" type="image/x-icon" href="/favicon.ico" -->
+
+<!-- end custom head snippets -->
+
+  </head>
+  <body>
+    <div class="wrapper">
+      <header >
+        <a href='https://cdrussell.github.io//'>
+          <h1>craigrussell</h1>
+          
+            <p>Technical blog from Craig Russell.</p>
+          
+        </a>
+
+        <nav>
+  <div style="
+         top: 0px;
+         right: 0px;
+         position: absolute">
+
+    <a href="/about">
+      <figure>
+        <img src="/images/me-round.png"
+             style="
+              height: 50px;
+              display: block;
+              margin-left: auto;
+              margin-right: auto;
+              "
+             alt="Photo of me, wearing a bright yellow t-shirt with a bright blue, cloudy sky in the background"
+        />
+        <figcaption style="text-align:justify" >About me</figcaption>
+      </figure>
+    </a>
+  </div>
+</nav>
+
+
+        <p> </p>
+      </header>
+      <section>
+
+      <h1 id="standardtestdispatcher-vs-unconfinedtestdispatcher">StandardTestDispatcher vs UnconfinedTestDispatcher</h1>
+<p><em>This articles describes the provided coroutine test dispatchers, standard and unconfined, the difference between them, and when to use each</em></p>
+
+<h2 id="some-background">Some background</h2>
+
+<h3 id="what-is-a-coroutine-dispatcher">What is a coroutine dispatcher?</h3>
+<p>A <code class="language-plaintext highlighter-rouge">coroutine dispatcher</code> determines which thread (or thread pool) should be used for running the coroutine. You are likely familiar with standard dispatchers, such as <code class="language-plaintext highlighter-rouge">Dispatchers.IO</code> and <code class="language-plaintext highlighter-rouge">Dispatchers.Default</code> (and <code class="language-plaintext highlighter-rouge">Dispatchers.Main</code> if working in Android). When using these, we can ensure that a coroutine is performed on the correct type of thread (e.g., threads meant for heavy CPU work, or IO work, or main thread etc…)</p>
+
+<blockquote>
+  <p><strong>Coroutine Dispatchers</strong> determine what thread or threads the corresponding coroutine uses for its execution. The coroutine dispatcher can confine coroutine execution to a specific thread, dispatch it to a thread pool, or let it run unconfined.</p>
+  <ul>
+    <li>Source: <a href="https://kotlinlang.org/docs/coroutine-context-and-dispatchers.html#dispatchers-and-threads">kotlinlang</a></li>
+  </ul>
+</blockquote>
+
+<div class="language-kotlin highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="nf">launch</span><span class="p">(</span><span class="nc">Dispatchers</span><span class="p">.</span><span class="nc">Default</span><span class="p">)</span> <span class="p">{</span> 
+    <span class="c1">// do work that might be computationally expensive for the CPU</span>
+    <span class="c1">// uses a thread pool</span>
+    <span class="c1">//   - typically sized to have one thread for every CPU core the device has</span>
+    <span class="c1">//   - minimum of 2 threads</span>
+<span class="p">}</span>
+
+<span class="nf">launch</span><span class="p">(</span><span class="nc">Dispatchers</span><span class="p">.</span><span class="nc">IO</span><span class="p">)</span> <span class="p">{</span>
+    <span class="c1">// do IO work, like reading from disk or sending data over the network</span>
+    <span class="c1">// uses a thread pool</span>
+    <span class="c1">//   - the number of threads can grow and shrink on demand up to a pre-configured max size</span>
+    <span class="c1">//   - default max thread pool is 64</span>
+<span class="p">}</span>
+
+<span class="nf">launch</span> <span class="p">(</span><span class="nc">Dispatchers</span><span class="p">.</span><span class="nc">Main</span><span class="p">)</span> <span class="p">{</span>
+    <span class="c1">// runs on the Android main thread. e.g., used for when interacting with Views</span>
+<span class="p">}</span>
+</code></pre></div></div>
+
+<h3 id="whats-the-relevance-of-coroutine-dispatchers-when-unit-testing">What’s the relevance of coroutine dispatchers when unit testing?</h3>
+<p>When writing unit tests, it is recommended to use a <a href="https://kotlin.github.io/kotlinx.coroutines/kotlinx-coroutines-test/kotlinx.coroutines.test/-test-dispatcher/index.html"><code class="language-plaintext highlighter-rouge">TestDispatcher</code></a> instead of a real coroutine dispatcher.</p>
+
+<p>Doing so allows you to have more control over how and when coroutines are launched in your classes under test, and can therefore result in more deterministic and reliable tests. You can control time, like skipping calls to <code class="language-plaintext highlighter-rouge">delay</code> to make tests run faster than they otherwise would, or advancing virtual time forward by a certain amount and asserting on the state of your coroutines at that moment.</p>
+
+<p>In order to dispatch coroutines using a test dispatcher, you should <a href="https://craigrussell.io/2021/12/testing-android-coroutines-using-runtest/#injecting-coroutine-dispatchers">inject coroutine dispatchers</a>.</p>
+
+<h2 id="which-test-dispatcher-to-use">Which test dispatcher to use?</h2>
+<p>If you’ve read the above, you now know:</p>
+<ol>
+  <li>why a test dispatcher is useful</li>
+  <li>how to inject one into your class under test</li>
+</ol>
+
+<p>What remains now is deciding which of the two available test dispatchers to use. Let’s see what the options are:</p>
+<ul>
+  <li><a href="https://kotlin.github.io/kotlinx.coroutines/kotlinx-coroutines-test/kotlinx.coroutines.test/-standard-test-dispatcher.html">StandardTestDispatcher</a></li>
+  <li><a href="https://kotlin.github.io/kotlinx.coroutines/kotlinx-coroutines-test/kotlinx.coroutines.test/-unconfined-test-dispatcher.html">UnconfinedTestDispatcher</a></li>
+</ul>
+
+<h3 id="standardtestdispatcher">StandardTestDispatcher</h3>
+<p>A standard test dispatcher <strong>does not execute any tasks</strong> automatically. When coroutines are launched with this dispatcher, instead of executing immediately they are left in a pending state.</p>
+
+<p>This gives you full control over what is executed and when, so that you use that fine control to assert your code is working as expected.</p>
+
+<h4 id="if-coroutines-dont-automatically-run-when-using-standardtestdispatcher-how-do-you-make-them-run">If coroutines don’t automatically run when using StandardTestDispatcher, how do you make them run?</h4>
+<p>You can access the <code class="language-plaintext highlighter-rouge">TestCoroutineScheduler</code> linked to the <code class="language-plaintext highlighter-rouge">StandardTestDispatcher</code> which provides methods for controlling the execution state of pending tasks. The following functions can be called directly from inside your <code class="language-plaintext highlighter-rouge">runTest</code> block.</p>
+
+<p><a href="https://kotlin.github.io/kotlinx.coroutines/kotlinx-coroutines-test/kotlinx.coroutines.test/-test-coroutine-scheduler/run-current.html"><code class="language-plaintext highlighter-rouge">runCurrent()</code></a></p>
+<ul>
+  <li><em>runs the pending tasks that have been scheduled until current virtual time</em></li>
+  <li><em>execution order of your coroutines is guaranteed</em></li>
+</ul>
+
+<p><a href="https://kotlin.github.io/kotlinx.coroutines/kotlinx-coroutines-test/kotlinx.coroutines.test/-test-coroutine-scheduler/advance-until-idle.html"><code class="language-plaintext highlighter-rouge">advanceUntilIdle()</code></a></p>
+<ul>
+  <li><em>runs all pending tasks</em></li>
+</ul>
+
+<p><a href="https://kotlin.github.io/kotlinx.coroutines/kotlinx-coroutines-test/kotlinx.coroutines.test/-test-coroutine-scheduler/advance-time-by.html"><code class="language-plaintext highlighter-rouge">advanceTimeBy(ms)</code></a></p>
+<ul>
+  <li><em>advances virtual time by given number of milliseconds, executing any pending coroutines that are now scheduled to run</em></li>
+</ul>
+
+<h3 id="unconfinedtestdispatcher">UnconfinedTestDispatcher</h3>
+<p>An unconfined test dispatcher offers <strong>no guarantees on the order</strong> in which coroutines will be launched.</p>
+
+<p>In return for giving up this control, however, you are <strong>not</strong> required to manually call <code class="language-plaintext highlighter-rouge">runCurrent()</code> and <code class="language-plaintext highlighter-rouge">advanceUntilIdle()</code> in your tests as <strong>coroutines are eagerly launched</strong> with this dispatcher.</p>
+
+<blockquote>
+  <p>Using this TestDispatcher can greatly simplify writing tests where it’s not important which thread is used when and in which order the queued coroutines are executed. Another typical use case for this dispatcher is launching child coroutines that are resumed immediately, without going through a dispatch; this can be helpful for testing Channel and StateFlow usages. (<a href="https://kotlin.github.io/kotlinx.coroutines/kotlinx-coroutines-test/kotlinx.coroutines.test/-unconfined-test-dispatcher.html">Source</a>)</p>
+</blockquote>
+
+<h2 id="comparing-standard-and-unconfined-test-dispatchers">Comparing standard and unconfined test dispatchers</h2>
+
+<table>
+  <thead>
+    <tr>
+      <th><strong>Test Dispatcher Type</strong></th>
+      <th style="text-align: center"><strong>Full control over execution order</strong></th>
+      <th style="text-align: center"><strong>Coroutines Run Automatically</strong></th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>Standard</td>
+      <td style="text-align: center">✅</td>
+      <td style="text-align: center">❌</td>
+    </tr>
+    <tr>
+      <td>Unconfined</td>
+      <td style="text-align: center">❌</td>
+      <td style="text-align: center">✅</td>
+    </tr>
+  </tbody>
+</table>
+
+<ul>
+  <li>If you care about testing the order of coroutine execution, use a <strong>Standard</strong> test dispatcher</li>
+  <li>If you have particularly tricky coroutine code, where you need fine control over what is launched and when, use a <strong>Standard</strong> test dispatcher</li>
+  <li>Otherwise, give <strong>Unconfined</strong> test dispatcher a go as it can simplify every test you write and make them more concise</li>
+</ul>
+
+<h1 id="links">Links</h1>
+<ul>
+  <li><a href="https://craigrussell.io/2021/12/testing-android-coroutines-using-runtest/">Testing Android Coroutines using runTest</a></li>
+  <li><a href="https://github.com/Kotlin/kotlinx.coroutines/blob/master/kotlinx-coroutines-test/README.md">Official docs</a></li>
+  <li><a href="https://kotlin.github.io/kotlinx.coroutines/kotlinx-coroutines-test/kotlinx.coroutines.test/-standard-test-dispatcher.html">StandardTestDispatcher</a></li>
+  <li><a href="https://kotlin.github.io/kotlinx.coroutines/kotlinx-coroutines-test/kotlinx.coroutines.test/-unconfined-test-dispatcher.html">UnconfinedTestDipatcher</a></li>
+</ul>
+
+
+<a href='https://cdrussell.github.io//'>Home</a>
+
+
+      </section>
+    </div>
+    <footer>
+    </footer>
+    <!--[if !IE]><script>fixScale(document);</script><![endif]-->
+  </body>
+</html>

@@ -1,0 +1,254 @@
+<!doctype html>
+<html lang="en-US">
+  <head>
+    <meta charset="utf-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+
+<!-- Begin Jekyll SEO tag v2.7.1 -->
+<title>Unit Testing Asynchronous Tasks from Bolts-Android | craigrussell</title>
+<meta name="generator" content="Jekyll v4.2.1" />
+<meta property="og:title" content="Unit Testing Asynchronous Tasks from Bolts-Android" />
+<meta name="author" content="Craig Russell" />
+<meta property="og:locale" content="en_US" />
+<meta name="description" content="How to write unit tests for asynchronous code using Bolts" />
+<meta property="og:description" content="How to write unit tests for asynchronous code using Bolts" />
+<link rel="canonical" href="https://cdrussell.github.io//2016/06/02/unit-testing-asynchronous-tasks-from-bolts-android" />
+<meta property="og:url" content="https://cdrussell.github.io//2016/06/02/unit-testing-asynchronous-tasks-from-bolts-android" />
+<meta property="og:site_name" content="craigrussell" />
+<meta property="og:type" content="article" />
+<meta property="article:published_time" content="2016-06-02T00:00:00+00:00" />
+<meta name="twitter:card" content="summary" />
+<meta property="twitter:title" content="Unit Testing Asynchronous Tasks from Bolts-Android" />
+<script type="application/ld+json">
+{"description":"How to write unit tests for asynchronous code using Bolts","url":"https://cdrussell.github.io//2016/06/02/unit-testing-asynchronous-tasks-from-bolts-android","@type":"BlogPosting","headline":"Unit Testing Asynchronous Tasks from Bolts-Android","dateModified":"2016-06-02T00:00:00+00:00","datePublished":"2016-06-02T00:00:00+00:00","mainEntityOfPage":{"@type":"WebPage","@id":"https://cdrussell.github.io//2016/06/02/unit-testing-asynchronous-tasks-from-bolts-android"},"author":{"@type":"Person","name":"Craig Russell"},"@context":"https://schema.org"}</script>
+<!-- End Jekyll SEO tag -->
+
+
+    <link rel="stylesheet" href="/assets/css/style.css?v=">
+    <script src="/assets/js/scale.fix.js"></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+
+    <!--[if lt IE 9]>
+    <script src="//html5shiv.googlecode.com/svn/trunk/html5.js"></script>
+    <![endif]-->
+
+    <!-- start custom head snippets, customize with your own _includes/head-custom.html file -->
+
+<!-- Setup Google Analytics -->
+
+
+
+<!-- You can set your favicon here -->
+<!-- link rel="shortcut icon" type="image/x-icon" href="/favicon.ico" -->
+
+<!-- end custom head snippets -->
+
+  </head>
+  <body>
+    <div class="wrapper">
+      <header >
+        <a href='https://cdrussell.github.io//'>
+          <h1>craigrussell</h1>
+          
+            <p>Technical blog from Craig Russell.</p>
+          
+        </a>
+
+        <nav>
+  <div style="
+         top: 0px;
+         right: 0px;
+         position: absolute">
+
+    <a href="/about">
+      <figure>
+        <img src="/images/me-round.png"
+             style="
+              height: 50px;
+              display: block;
+              margin-left: auto;
+              margin-right: auto;
+              "
+             alt="Photo of me, wearing a bright yellow t-shirt with a bright blue, cloudy sky in the background"
+        />
+        <figcaption style="text-align:justify" >About me</figcaption>
+      </figure>
+    </a>
+  </div>
+</nav>
+
+
+        <p> </p>
+      </header>
+      <section>
+
+      <h1 id="unit-testing-asynchronous-tasks-from-bolts-android">Unit Testing Asynchronous Tasks from Bolts-Android</h1>
+<p><em>How to write unit tests for asynchronous code using Bolts</em></p>
+
+<h2 id="what-is-bolts">What is Bolts?</h2>
+<p>What is Bolts-Android? Bolts essentially consists of two libraries; one for supporting app linking and another for asynchronous tasks. It is an open source library from Facebook and you can read all about it <a href="https://github.com/BoltsFramework/Bolts-Android">here</a>.</p>
+
+<p>If you are new to Bolts, this is not the article for you, as there are better articles out there for describing how to get started with Bolts; this article assumes a good deal of familiarity with it already. For me, adopting Bolts has made many complicated tasks much easier and has become a regular in my Android developer toolbox.</p>
+
+<p>This article describes a means of testing Bolts Tasks.</p>
+
+<p><img src="/images/bolts-and-tools.jpeg" alt="various hardware tools laid out on a table" width="100%" style="display: block; margin-left: auto; margin-right: auto;" /></p>
+
+<h2 id="im-in-a-hurry-just-give-me-the-code">I’m in a hurry, just give me the code!!</h2>
+
+<p>Sure, here you go. <a href="https://github.com/CDRussell/BoltsExample">Sample Project</a> on Github.</p>
+
+<h2 id="why-is-testing-difficult">Why is testing difficult?</h2>
+<p>Why is testing asynchronous <code class="language-plaintext highlighter-rouge">Tasks</code> difficult? In essence, it is because the thread executing the unit tests will complete before the thread doing the background work. The unit tests won’t wait around for the task to finish by default. What we need is a way of notifying when a unit test should perform its assertion.</p>
+
+<p>In order to do that we need a way of blocking the unit test from completing.</p>
+
+<p>There are two distinct scenarios here:</p>
+<ol>
+  <li>The method we are testing directly returns a <code class="language-plaintext highlighter-rouge">Task</code></li>
+  <li>The method we are testing uses a <code class="language-plaintext highlighter-rouge">Task</code> under the hood, but doesn’t expose it.</li>
+</ol>
+
+<h3 id="testing-methods-returning-a-task">Testing methods returning a Task</h3>
+<p>This is the easiest case. Let’s consider the following method:</p>
+
+<div class="language-java highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="kd">public</span> <span class="nc">Task</span><span class="o">&lt;</span><span class="nc">Boolean</span><span class="o">&gt;</span> <span class="nf">doWorkTask</span><span class="o">()</span> <span class="o">{</span>
+    <span class="k">return</span> <span class="nc">Task</span><span class="o">.</span><span class="na">callInBackground</span><span class="o">(()</span> <span class="o">-&gt;</span> <span class="o">{</span>
+
+        <span class="c1">// simulate doing 'hard' work</span>
+        <span class="nc">Thread</span><span class="o">.</span><span class="na">sleep</span><span class="o">(</span><span class="mi">1000</span><span class="o">);</span>
+        <span class="k">return</span> <span class="kc">true</span><span class="o">;</span>
+
+    <span class="o">});</span>
+<span class="o">}</span>
+</code></pre></div></div>
+
+<p>This method returns immediately with a <code class="language-plaintext highlighter-rouge">Task</code> which runs a background thread for 1 second before eventually having a result of true.</p>
+
+<p>To unit test this, a naive approach would be to try:</p>
+
+<div class="language-java highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="c1">// THIS TEST WILL FAIL ❌</span>
+<span class="nd">@Test</span>
+<span class="kd">public</span> <span class="kt">void</span> <span class="nf">directTaskAccess</span><span class="o">()</span> <span class="o">{</span>
+    <span class="nc">Task</span><span class="o">&lt;</span><span class="nc">Boolean</span><span class="o">&gt;</span> <span class="n">task</span> <span class="o">=</span> <span class="k">new</span> <span class="nc">Worker</span><span class="o">().</span><span class="na">doWorkTask</span><span class="o">();</span>
+    <span class="n">assertTrue</span><span class="o">(</span><span class="n">task</span><span class="o">.</span><span class="na">getResult</span><span class="o">());</span>
+<span class="o">}</span>
+</code></pre></div></div>
+
+<p>This will fail with a <code class="language-plaintext highlighter-rouge">NullPointerException</code> as <code class="language-plaintext highlighter-rouge">task.getResult()</code> isn’t populated yet (and won’t be for another ~1 second).</p>
+
+<p>A simple approach for handling this when you have direct access to the <code class="language-plaintext highlighter-rouge">Task</code> object, like in this case, is to use the method <code class="language-plaintext highlighter-rouge">waitForCompletion()</code> method, which blocks until the <code class="language-plaintext highlighter-rouge">Task</code> completes.</p>
+
+<div class="language-java highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="c1">// THIS TEST WILL PASS ✅</span>
+<span class="nd">@Test</span>
+<span class="kd">public</span> <span class="kt">void</span> <span class="nf">directTaskAccess</span><span class="o">()</span> <span class="kd">throws</span> <span class="nc">InterruptedException</span> <span class="o">{</span>
+    <span class="nc">Task</span><span class="o">&lt;</span><span class="nc">Boolean</span><span class="o">&gt;</span> <span class="n">task</span> <span class="o">=</span> <span class="k">new</span> <span class="nc">Worker</span><span class="o">().</span><span class="na">doWorkTask</span><span class="o">();</span>
+    <span class="n">task</span><span class="o">.</span><span class="na">waitForCompletion</span><span class="o">();</span>
+    <span class="n">assertTrue</span><span class="o">(</span><span class="n">task</span><span class="o">.</span><span class="na">getResult</span><span class="o">());</span>
+<span class="o">}</span>
+</code></pre></div></div>
+
+<h3 id="testing-a-method-which-uses-a-background-task-but-doesnt-return-it">Testing a method which uses a background Task but doesn’t return it</h3>
+<p>Let’s get more complicated then. How do you manage the situation whereby you don’t have access to the <code class="language-plaintext highlighter-rouge">Task</code> directly from the unit tests? For example, consider the following setup:</p>
+
+<div class="language-java highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="kd">public</span> <span class="kt">void</span> <span class="nf">doWorkCallback</span><span class="o">(</span><span class="kd">final</span> <span class="nc">WorkCompletionListener</span> <span class="n">callback</span><span class="o">)</span> <span class="o">{</span>
+    <span class="nc">Task</span><span class="o">.</span><span class="na">call</span><span class="o">((</span><span class="nc">Callable</span><span class="o">&lt;</span><span class="nc">Void</span><span class="o">&gt;)</span> <span class="o">()</span> <span class="o">-&gt;</span> <span class="o">{</span>
+
+        <span class="c1">// simulate doing 'hard' work</span>
+        <span class="nc">Thread</span><span class="o">.</span><span class="na">sleep</span><span class="o">(</span><span class="mi">1000</span><span class="o">);</span>
+
+        <span class="k">if</span> <span class="o">(</span><span class="n">callback</span> <span class="o">!=</span> <span class="kc">null</span><span class="o">)</span> <span class="o">{</span>
+            <span class="n">callback</span><span class="o">.</span><span class="na">finished</span><span class="o">(</span><span class="kc">true</span><span class="o">);</span>
+        <span class="o">}</span>
+        <span class="k">return</span> <span class="kc">null</span><span class="o">;</span>
+    <span class="o">},</span> <span class="nc">Task</span><span class="o">.</span><span class="na">BACKGROUND_EXECUTOR</span><span class="o">);</span>
+<span class="o">}</span>
+<span class="kd">public</span> <span class="kd">interface</span> <span class="nc">WorkCompletionListener</span> <span class="o">{</span>
+    <span class="kt">void</span> <span class="nf">finished</span><span class="o">(</span><span class="kt">boolean</span> <span class="n">successful</span><span class="o">);</span>
+<span class="o">}</span>
+</code></pre></div></div>
+
+<p>This time around, we aren’t exposing the <code class="language-plaintext highlighter-rouge">Task</code> directly, but instead, inside the method we are testing, we utilise an asynchronous <code class="language-plaintext highlighter-rouge">Task</code> and return the result later using a provided callback.</p>
+
+<p>Our naive attempt this time might be to try this:</p>
+
+<div class="language-java highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="c1">// WARNING: THIS WILL PASS BUT THE ASSERTION ISN'T CHECKED! ❌</span>
+<span class="nd">@Test</span>
+<span class="kd">public</span> <span class="kt">void</span> <span class="nf">noDirectTaskAccess</span><span class="o">()</span> <span class="kd">throws</span> <span class="nc">InterruptedException</span> <span class="o">{</span>
+    <span class="k">new</span> <span class="nf">Worker</span><span class="o">().</span><span class="na">doWorkCallback</span><span class="o">(</span><span class="nl">Assert:</span><span class="o">:</span><span class="n">assertTrue</span><span class="o">);</span>
+<span class="o">}</span>
+</code></pre></div></div>
+
+<p>By the way, <code class="language-plaintext highlighter-rouge">Assert::assertTrue</code> is the same as writing the following but uses <code class="language-plaintext highlighter-rouge">Retrolambda</code> to make it much more succinct.</p>
+
+<div class="language-java highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">new</span> <span class="nc">Worker</span><span class="o">().</span><span class="na">doWorkCallback</span><span class="o">(</span><span class="k">new</span> <span class="nc">Worker</span><span class="o">.</span><span class="na">WorkerCompletionListener</span><span class="o">()</span> <span class="o">{</span>
+    <span class="nd">@Override</span>
+    <span class="kd">public</span> <span class="kt">void</span> <span class="nf">finished</span><span class="o">(</span><span class="kt">boolean</span> <span class="n">successful</span><span class="o">)</span> <span class="o">{</span>
+        <span class="n">assertTrue</span><span class="o">(</span><span class="n">successful</span><span class="o">);</span>
+    <span class="o">}</span>
+<span class="o">});</span>
+</code></pre></div></div>
+
+<p>The problem here is that the unit testing is finishing without an issue but our assertTrue never even runs. Go ahead and change the assertion to check for false instead of true; still passes!</p>
+
+<p>The solution this time is to set a custom executor for unit testing that doesn’t actually run in the background; instead we use an executor which runs immediately.</p>
+
+<div class="language-java highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="kd">public</span> <span class="kd">class</span> <span class="nc">Worker</span> <span class="o">{</span>
+
+    <span class="nd">@VisibleForTesting</span>
+    <span class="nc">Executor</span> <span class="n">bgExecutor</span> <span class="o">=</span> <span class="nc">Task</span><span class="o">.</span><span class="na">BACKGROUND_EXECUTOR</span><span class="o">;</span>
+
+    <span class="kd">public</span> <span class="kt">void</span> <span class="nf">doWorkCallback</span><span class="o">(</span><span class="kd">final</span> <span class="nc">WorkerCompletionListener</span> <span class="n">listener</span><span class="o">)</span> <span class="o">{</span>
+        <span class="nc">Task</span><span class="o">.</span><span class="na">call</span><span class="o">((</span><span class="nc">Callable</span><span class="o">&lt;</span><span class="nc">Void</span><span class="o">&gt;)</span> <span class="o">()</span> <span class="o">-&gt;</span> <span class="o">{</span>
+
+            <span class="c1">// simulate doing 'hard' work</span>
+            <span class="nc">Thread</span><span class="o">.</span><span class="na">sleep</span><span class="o">(</span><span class="mi">1000</span><span class="o">);</span>
+
+            <span class="k">if</span> <span class="o">(</span><span class="n">listener</span> <span class="o">!=</span> <span class="kc">null</span><span class="o">)</span> <span class="o">{</span>
+                <span class="n">listener</span><span class="o">.</span><span class="na">finished</span><span class="o">(</span><span class="kc">true</span><span class="o">);</span>
+            <span class="o">}</span>
+            <span class="k">return</span> <span class="kc">null</span><span class="o">;</span>
+        <span class="o">},</span> <span class="n">bgExecutor</span><span class="o">);</span>
+    <span class="o">}</span>
+<span class="o">}</span>
+</code></pre></div></div>
+
+<p>This code is functionally the same as before, but this time we use a variable which points to the executor to use, defaulting to <code class="language-plaintext highlighter-rouge">Task.BACKGROUND_EXECUTOR</code> as before. Now, though, we can set that variable during testing to an immediately executing executor. What does that look like?</p>
+
+<h4 id="with-retrolambda">with Retrolambda</h4>
+<div class="language-java highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="nl">Runnable:</span><span class="o">:</span><span class="n">run</span><span class="o">;</span>
+</code></pre></div></div>
+
+<h4 id="without-retrolambda-same-as-previous-just-more-verbose">without Retrolambda (same as previous; just more verbose)</h4>
+<div class="language-java highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">new</span> <span class="nc">Executor</span><span class="o">()</span> <span class="o">{</span>
+    <span class="nd">@Override</span>
+    <span class="kd">public</span> <span class="kt">void</span> <span class="nf">execute</span><span class="o">(</span><span class="nc">Runnable</span> <span class="n">command</span><span class="o">)</span> <span class="o">{</span>
+        <span class="n">command</span><span class="o">.</span><span class="na">run</span><span class="o">();</span>
+    <span class="o">}</span>
+<span class="o">};</span>
+</code></pre></div></div>
+
+<h3 id="finishing-off">Finishing off</h3>
+<div class="language-java highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="nd">@Test</span>
+<span class="kd">public</span> <span class="kt">void</span> <span class="nf">noDirectTaskAccess</span><span class="o">()</span> <span class="kd">throws</span> <span class="nc">InterruptedException</span> <span class="o">{</span>
+    <span class="nc">Worker</span> <span class="n">worker</span> <span class="o">=</span> <span class="k">new</span> <span class="nc">Worker</span><span class="o">();</span>
+    <span class="n">worker</span><span class="o">.</span><span class="na">bgExecutor</span> <span class="o">=</span> <span class="nl">Runnable:</span><span class="o">:</span><span class="n">run</span><span class="o">;</span>
+    <span class="n">worker</span><span class="o">.</span><span class="na">doWorkCallback</span><span class="o">(</span><span class="nl">Assert:</span><span class="o">:</span><span class="n">assertTrue</span><span class="o">);</span>
+<span class="o">}</span>
+</code></pre></div></div>
+
+<p>Success! ✅</p>
+
+<p>For the extra paranoid, ensure it fails when you <code class="language-plaintext highlighter-rouge">Assert::assertFalse</code> and passes when you use <code class="language-plaintext highlighter-rouge">Assert:assertTrue</code>.</p>
+
+
+<a href='https://cdrussell.github.io//'>Home</a>
+
+
+      </section>
+    </div>
+    <footer>
+    </footer>
+    <!--[if !IE]><script>fixScale(document);</script><![endif]-->
+  </body>
+</html>

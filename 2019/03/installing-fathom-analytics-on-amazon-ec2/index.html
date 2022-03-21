@@ -1,0 +1,265 @@
+<!doctype html>
+<html lang="en-US">
+  <head>
+    <meta charset="utf-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+
+<!-- Begin Jekyll SEO tag v2.7.1 -->
+<title>Installing Fathom Analytics on Amazon EC2 | craigrussell</title>
+<meta name="generator" content="Jekyll v4.2.1" />
+<meta property="og:title" content="Installing Fathom Analytics on Amazon EC2" />
+<meta name="author" content="Craig Russell" />
+<meta property="og:locale" content="en_US" />
+<meta name="description" content="How to install the privacy-focussed Fathom website analytics on an Amazon EC2 instance." />
+<meta property="og:description" content="How to install the privacy-focussed Fathom website analytics on an Amazon EC2 instance." />
+<link rel="canonical" href="https://cdrussell.github.io//2019/03/installing-fathom-analytics-on-amazon-ec2/" />
+<meta property="og:url" content="https://cdrussell.github.io//2019/03/installing-fathom-analytics-on-amazon-ec2/" />
+<meta property="og:site_name" content="craigrussell" />
+<meta property="og:type" content="article" />
+<meta property="article:published_time" content="2019-03-15T02:03:53+00:00" />
+<meta name="twitter:card" content="summary" />
+<meta property="twitter:title" content="Installing Fathom Analytics on Amazon EC2" />
+<script type="application/ld+json">
+{"description":"How to install the privacy-focussed Fathom website analytics on an Amazon EC2 instance.","url":"https://cdrussell.github.io//2019/03/installing-fathom-analytics-on-amazon-ec2/","@type":"BlogPosting","headline":"Installing Fathom Analytics on Amazon EC2","dateModified":"2019-03-15T02:03:53+00:00","datePublished":"2019-03-15T02:03:53+00:00","mainEntityOfPage":{"@type":"WebPage","@id":"https://cdrussell.github.io//2019/03/installing-fathom-analytics-on-amazon-ec2/"},"author":{"@type":"Person","name":"Craig Russell"},"@context":"https://schema.org"}</script>
+<!-- End Jekyll SEO tag -->
+
+
+    <link rel="stylesheet" href="/assets/css/style.css?v=">
+    <script src="/assets/js/scale.fix.js"></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+
+    <!--[if lt IE 9]>
+    <script src="//html5shiv.googlecode.com/svn/trunk/html5.js"></script>
+    <![endif]-->
+
+    <!-- start custom head snippets, customize with your own _includes/head-custom.html file -->
+
+<!-- Setup Google Analytics -->
+
+
+
+<!-- You can set your favicon here -->
+<!-- link rel="shortcut icon" type="image/x-icon" href="/favicon.ico" -->
+
+<!-- end custom head snippets -->
+
+  </head>
+  <body>
+    <div class="wrapper">
+      <header >
+        <a href='https://cdrussell.github.io//'>
+          <h1>craigrussell</h1>
+          
+            <p>Technical blog from Craig Russell.</p>
+          
+        </a>
+
+        <nav>
+  <div style="
+         top: 0px;
+         right: 0px;
+         position: absolute">
+
+    <a href="/about">
+      <figure>
+        <img src="/images/me-round.png"
+             style="
+              height: 50px;
+              display: block;
+              margin-left: auto;
+              margin-right: auto;
+              "
+             alt="Photo of me, wearing a bright yellow t-shirt with a bright blue, cloudy sky in the background"
+        />
+        <figcaption style="text-align:justify" >About me</figcaption>
+      </figure>
+    </a>
+  </div>
+</nav>
+
+
+        <p> </p>
+      </header>
+      <section>
+
+      <p><em>This post describes how to install Fathom analytics on an Amazon EC2 instance. Fathom allows you to have privacy-respecting website analytics. If you host it yourself, you’re the only one who gets to see that data and the software is FOSS.</em></p>
+
+<h1 id="alternative-to-google-analytics">Alternative to Google Analytics</h1>
+<p>Fathom is best described as an alternative to Google Analytics. GA has pervaded the entire web, and has done so by offering itself for free. In exchange for all the data about your visitors you could hope for, Google gets access to this information too and can track your users around the web.</p>
+
+<p>Isn’t there a better way? A way that doesn’t sell out your website visitors? Oh hi there <a href="https://usefathom.com/"><code class="language-plaintext highlighter-rouge">Fathom Analytics</code></a> 👋, I’m glad to see you exist.</p>
+
+<h1 id="what-is-fathom-analytics">What is Fathom Analytics</h1>
+
+<blockquote>
+  <p>Fathom Analytics provides simple, useful websites stats without tracking or storing personal data of your users.</p>
+</blockquote>
+
+<p>Fathom is FOSS and you can <a href="https://github.com/usefathom/fathom">find it on GitHub</a>.</p>
+
+<p><img src="/images/fathom-example.jpg" alt="Screenshot showing fathom analytics from their website" /></p>
+
+<p>Note, at the time of writing, their premium offering’s codebase seems to have moved on somewhat from the free version, and at the moment it doesn’t look like they are immediately accepting PRs for improvements.</p>
+
+<div class="jekyll-twitter-plugin"><blockquote class="twitter-tweet" data-width="500"><p lang="en" dir="ltr">Hi Craig - There&#39;s been a lot of change over the last few months and we&#39;ve re-built our pro version to scale to increasing demand, so we&#39;ve had less time for the OS version. We are going to be accepting PR requests in 1-2 months, and would welcome PRs :) Thanks!</p>&mdash; Fathom Analytics (@usefathom) <a href="https://twitter.com/usefathom/status/1105649809631911936?ref_src=twsrc%5Etfw">March 13, 2019</a></blockquote>
+<script async="" src="https://platform.twitter.com/widgets.js" charset="utf-8"></script>
+</div>
+
+<p>Sometimes this just means a company is focussed elsewhere, or doing large refactoring under the hood. Fathom did reach out to me to confirm they remain committed to having a free product available:</p>
+
+<blockquote>
+  <p>A core guiding principle with Fathom is that privacy shouldn’t just be for those who can afford it. There will always be a free offering.</p>
+</blockquote>
+
+<h1 id="where-to-install-fathom">Where to Install Fathom</h1>
+<p>If standing up your own infrastructure and installing it yourself isn’t your cup of tea, you can pay a monthly fee to access their fully managed version. This will be, by far, the easiest way to get going with Fathom. <a href="https://usefathom.com/#pricing">https://usefathom.com/#pricing</a></p>
+
+<p>However, if like me you’d rather get your hands dirty and manage it yourself, you can use it for free. But you’ll need to find a place to install it. This place will also have to be 24/7 publicly accessible, as it will be hit each time someone views your website.</p>
+
+<p>I chose to use EC2 as it has a generous free tier and should mean I can make use of it without having to pay any money.</p>
+
+<p>This post will <em>not</em> detail how to configure an EC2 instance; go check out <a href="https://aws.amazon.com/ec2/?ft=n">the official docs</a> for more information.</p>
+
+<h1 id="set-up-fathom">Set up Fathom</h1>
+
+<p>Once your EC2 instance is up and running, you’ll want to ensure you’ve allowed network traffic into it, and configured it with an elastic IP address.</p>
+
+<p>Then you’ll want to install <code class="language-plaintext highlighter-rouge">Fathom</code>. You should <a href="https://github.com/usefathom/fathom/blob/master/docs/Installation%20instructions.md">follow the official instructions</a> for installing it.</p>
+
+<h2 id="configuring-fathom">Configuring Fathom</h2>
+<p>The official docs describe how to configure and install Fathom, and give an example of using <code class="language-plaintext highlighter-rouge">NGINX</code> to expose the Fathom service on a nice URL (so you don’t have to include the port number for example).</p>
+
+<p>I <em>didn’t</em> use NGINX and I regretted it. I wish I had 😢. So if you can, you should use it.</p>
+
+<p>I ended up using <code class="language-plaintext highlighter-rouge">Apache</code> and this is where I found most of my troubles. So I’ll share my solutions here in case anyone else is using <code class="language-plaintext highlighter-rouge">Apache</code> with <code class="language-plaintext highlighter-rouge">Fathom</code>, but please do look at <code class="language-plaintext highlighter-rouge">NGINX</code> if you can.</p>
+
+<h2 id="automatically-starting-fathom-on-boot">Automatically starting Fathom on boot</h2>
+<p>You’ll certainly want to do this, so follow the given instructions.</p>
+
+<h4 id="troubleshooting">Troubleshooting</h4>
+<p>If you see errors like the following:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>Failed to execute operation: The name org.freedesktop.PolicyKit1 was not provided by any .service files
+</code></pre></div></div>
+
+<p>Then run that command again with <code class="language-plaintext highlighter-rouge">sudo</code> to fix.</p>
+
+<h1 id="setting-up-ssl">Setting Up SSL</h1>
+<p>You’ll likely want to have your Fathom installation accessible over SSL. Not only is this more secure for your users, but it might even be required depending on your domain and/or website.</p>
+
+<p>The <a href="https://github.com/usefathom/fathom/blob/master/docs/Installation%20instructions.md#ssl-certificate">Fathom instructions for configuring SSL</a> is catered for <code class="language-plaintext highlighter-rouge">NGINX</code> usage, and is short and sweet: use Fathom instructions if you are using <code class="language-plaintext highlighter-rouge">NGINX</code>. Otherwise, follow the official Amazon <a href="https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/SSL-on-an-instance.html">documentation for configuring SSL </a>.</p>
+
+<p>I recommend using <strong>Let’s Encrypt</strong> for getting and managing the SSL cert, as described in the docs above.</p>
+
+<p>After the SSL cert has been created, note the locations of the SSL-cert files as you’ll need them soon if you’re configuring an Apache reverse proxy.</p>
+
+<h1 id="my-configuration">My Configuration</h1>
+<p>I have the following domain, for which I ultimately want page visits to be tracked. <code class="language-plaintext highlighter-rouge">https://craigrussell.io</code></p>
+
+<p>I have an instance of EC2 with an elastic IP address configured, and network security policy set to allow incoming traffic.</p>
+
+<h2 id="dns-records">DNS Records</h2>
+<p>I want to be able to access Fathom with this URL: <code class="language-plaintext highlighter-rouge">https://analytics.craigrussell.io</code>.</p>
+
+<p>In order to do this, I needed to configure DNS records so that any request to <code class="language-plaintext highlighter-rouge">analytics.craigrussell.io</code> is redirected accordingly.</p>
+
+<p>This meant creating a new <code class="language-plaintext highlighter-rouge">A Record</code>, with the following details:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>host:           analytics
+ip address:     use your EC2 elastic IP address
+ttl:            automatic
+</code></pre></div></div>
+
+<p>So now a request to analytics.craigrussell.io will redirect to the elastic IP address of your EC2 instance. But we still need a way to get that request to the actual Fathom service.</p>
+
+<h1 id="install-apache">Install Apache</h1>
+<p>Amazon provide <a href="https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/ec2-lamp-amazon-linux-2.html">documentation on installing Apache</a> so you should follow that to get going with a basic installation.</p>
+
+<h2 id="apache-forwarding-and-proxy">Apache Forwarding and Proxy</h2>
+<p>When your request hits the EC2 instance, we need Apache to redirect it to use port <code class="language-plaintext highlighter-rouge">8080</code> under the hood, which is where Fathom is running.</p>
+
+<p>To successfully do this, you have to setup a reverse proxy, which you can do by editing the Apache config file.</p>
+
+<h3 id="apache-config-file">Apache Config File</h3>
+<p>Useful things to remember, as you might need these a lot while tinkering with the config:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>Config file location:       /etc/httpd/conf/httpd.conf
+Command to restart Apache:  sudo systemctl restart httpd
+</code></pre></div></div>
+
+<p>I have provided my working example Apache config file below, but here are some points to highlight about it:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>- ServerName needs to match what you configured for SSL and DNS
+- SSLEngine needs to be enabled
+- SSLProxyEngine needs to be enabled
+- You need to tell Apache where to find various SSL-related files (which were generated when you ran `Let's Encrypt`)
+- Ensure the port number in the `Location` section matches your Fathon configuration.
+</code></pre></div></div>
+
+<h3 id="apache-config-file---working-example">Apache Config File - Working Example</h3>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code># Config file location:  /etc/httpd/conf/httpd.conf
+
+Listen 80
+
+&lt;VirtualHost *:80&gt;
+    DocumentRoot "/var/www/html"
+    ServerName "analytics.craigrussell.io"
+    ServerAlias "analytics.craigrussell.io"
+&lt;/VirtualHost&gt;
+
+&lt;VirtualHost *:443&gt;
+    ServerName "analytics.craigrussell.io"
+    SSLEngine on
+    SSLProxyEngine on
+    SSLCertificateFile /etc/letsencrypt/live/analytics.craigrussell.io/cert.pem
+    SSLCertificateKeyFile /etc/letsencrypt/live/analytics.craigrussell.io/privkey.pem
+    SSLCertificateChainFile /etc/letsencrypt/live/analytics.craigrussell.io/chain.pem
+
+    &lt;Location /&gt;
+        ProxyPass http://localhost:8080/
+        ProxyPassReverse http://localhost:8080/
+        ProxyPreserveHost On
+        ProxyErrorOverride Off
+    &lt;/Location&gt;
+&lt;/VirtualHost&gt;
+</code></pre></div></div>
+
+<h1 id="testing-it-works">Testing it works</h1>
+<p>At this point, before you even touch your website, you should check the installation works.</p>
+
+<p>You should be able to access Fathom using the URL you configured above, and it should be available for HTTPS calls.</p>
+
+<p>In my case, I can access <code class="language-plaintext highlighter-rouge">https://analytics.craigrussell.io</code> from any browser which confirms my installation is working as expected.</p>
+
+<p>If you can’t access yours at this point, something is wrong. You need to revisit the steps above to figure out what happened.</p>
+
+<p>If you can’t access the service directly from your browser, your analytics requests won’t make it through to your Fathom instance, and it’ll record nothing.</p>
+
+<h1 id="add-tracking-snippet-to-your-webpages">Add Tracking Snippet to your Webpages</h1>
+<p>The final step is to add the tracking snippet to your web pages.</p>
+
+<p>You can find the tracking snippet from the web console available from loading Fathom in a browser. Hit the cog to see site settings, and it’ll provide a script you can copy into your webpages.</p>
+
+<p>It’s usually best to copy this script into the <code class="language-plaintext highlighter-rouge">&lt;head&gt;</code> HTML tags.</p>
+
+<p>When copying the script, ensure it contains your publicly-visible domain where Fathom is reachable (and not <code class="language-plaintext highlighter-rouge">localhost</code> for example).</p>
+
+<p>Again, to test, you should be able to reach the <code class="language-plaintext highlighter-rouge">tracker.js</code> page directly on your analytics domain to verify it’s working as expected.</p>
+
+<h1 id="done-">Done! 🎉</h1>
+<p>You’ve configured your own Fathom analytics instance on EC2.</p>
+
+<p>In doing so, you’re doing your part to look after the privacy of your site’s visitors while still getting basic insights into which pages on your site are being viewed most.</p>
+
+
+<a href='https://cdrussell.github.io//'>Home</a>
+
+
+      </section>
+    </div>
+    <footer>
+    </footer>
+    <!--[if !IE]><script>fixScale(document);</script><![endif]-->
+  </body>
+</html>

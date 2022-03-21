@@ -1,0 +1,241 @@
+<!doctype html>
+<html lang="en-US">
+  <head>
+    <meta charset="utf-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+
+<!-- Begin Jekyll SEO tag v2.7.1 -->
+<title>Scripting with Kotlin - Kscript | craigrussell</title>
+<meta name="generator" content="Jekyll v4.2.1" />
+<meta property="og:title" content="Scripting with Kotlin - Kscript" />
+<meta name="author" content="Craig Russell" />
+<meta property="og:locale" content="en_US" />
+<meta name="description" content="kscript, an easy way to write and execute scripts in Kotlin. This post covers what kscript is, how to install it on a Mac, and offers some kscript examples." />
+<meta property="og:description" content="kscript, an easy way to write and execute scripts in Kotlin. This post covers what kscript is, how to install it on a Mac, and offers some kscript examples." />
+<link rel="canonical" href="https://cdrussell.github.io//2019/02/scripting-with-kotlin-kscript/" />
+<meta property="og:url" content="https://cdrussell.github.io//2019/02/scripting-with-kotlin-kscript/" />
+<meta property="og:site_name" content="craigrussell" />
+<meta property="og:type" content="article" />
+<meta property="article:published_time" content="2019-02-26T01:00:00+00:00" />
+<meta name="twitter:card" content="summary" />
+<meta property="twitter:title" content="Scripting with Kotlin - Kscript" />
+<script type="application/ld+json">
+{"description":"kscript, an easy way to write and execute scripts in Kotlin. This post covers what kscript is, how to install it on a Mac, and offers some kscript examples.","url":"https://cdrussell.github.io//2019/02/scripting-with-kotlin-kscript/","@type":"BlogPosting","headline":"Scripting with Kotlin - Kscript","dateModified":"2019-02-26T01:00:00+00:00","datePublished":"2019-02-26T01:00:00+00:00","mainEntityOfPage":{"@type":"WebPage","@id":"https://cdrussell.github.io//2019/02/scripting-with-kotlin-kscript/"},"author":{"@type":"Person","name":"Craig Russell"},"@context":"https://schema.org"}</script>
+<!-- End Jekyll SEO tag -->
+
+
+    <link rel="stylesheet" href="/assets/css/style.css?v=">
+    <script src="/assets/js/scale.fix.js"></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+
+    <!--[if lt IE 9]>
+    <script src="//html5shiv.googlecode.com/svn/trunk/html5.js"></script>
+    <![endif]-->
+
+    <!-- start custom head snippets, customize with your own _includes/head-custom.html file -->
+
+<!-- Setup Google Analytics -->
+
+
+
+<!-- You can set your favicon here -->
+<!-- link rel="shortcut icon" type="image/x-icon" href="/favicon.ico" -->
+
+<!-- end custom head snippets -->
+
+  </head>
+  <body>
+    <div class="wrapper">
+      <header >
+        <a href='https://cdrussell.github.io//'>
+          <h1>craigrussell</h1>
+          
+            <p>Technical blog from Craig Russell.</p>
+          
+        </a>
+
+        <nav>
+  <div style="
+         top: 0px;
+         right: 0px;
+         position: absolute">
+
+    <a href="/about">
+      <figure>
+        <img src="/images/me-round.png"
+             style="
+              height: 50px;
+              display: block;
+              margin-left: auto;
+              margin-right: auto;
+              "
+             alt="Photo of me, wearing a bright yellow t-shirt with a bright blue, cloudy sky in the background"
+        />
+        <figcaption style="text-align:justify" >About me</figcaption>
+      </figure>
+    </a>
+  </div>
+</nav>
+
+
+        <p> </p>
+      </header>
+      <section>
+
+      <p><em>This post discusses kscript, an easy way to write and execute scripts in Kotlin. This post covers what kscript is, how to install it on a Mac, and offers some kscript examples.</em></p>
+
+<h2 id="what-is-kscript">What is Kscript</h2>
+<blockquote>
+  <p>Enhanced scripting support for Kotlin on *nix-based systems.</p>
+</blockquote>
+
+<p>While Kotlin has some support for scripting already, it lacks a few things which would help its adoption. Chief among them for me, is the extra friction caused by having to run it using <code class="language-plaintext highlighter-rouge">kotlinc</code>.</p>
+
+<p>That’s not really a big deal, I know. And there’s probably a way around it that I don’t yet know about. But I wanted something as simple and familiar as executing a <code class="language-plaintext highlighter-rouge">.sh</code> bash script.</p>
+
+<p><code class="language-plaintext highlighter-rouge">Kscript</code> offers not only a convenient way to run a script, but also a bunch of other stuff on top.</p>
+
+<h2 id="installing-kscript">Installing Kscript</h2>
+<p>There are few options for installation, but I usually prefer the <code class="language-plaintext highlighter-rouge">brew</code> option when it is available. If that’s not your thing, see its <a href="https://github.com/holgerbrandl/kscript">GitHub</a> page for more options.</p>
+
+<p>To install using Brew, run:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>brew install holgerbrandl/tap/kscript
+</code></pre></div></div>
+
+<h2 id="your-first-kscript">Your first kscript</h2>
+
+<ol>
+  <li>
+    <p>Create a new file. Let’s call it <code class="language-plaintext highlighter-rouge">hello-world.kts</code>. The <code class="language-plaintext highlighter-rouge">kts</code> suffix is optional; feel free to use something else or omit it if you don’t like it.</p>
+  </li>
+  <li>
+    <p>Add the following to the file</p>
+
+    <div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code> #!/usr/bin/env kscript
+    
+ println("Hello world!")
+</code></pre></div>    </div>
+  </li>
+  <li>
+    <p>Make the file executable.</p>
+
+    <div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code> chmod +x hello-world.kts
+</code></pre></div>    </div>
+  </li>
+  <li>
+    <p>Execute the script</p>
+
+    <div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>./hello-world.kts
+</code></pre></div>    </div>
+  </li>
+</ol>
+
+<h2 id="add-functions">Add functions</h2>
+<p>As you can see from the example above, you don’t need any structure in the script. You don’t need a <code class="language-plaintext highlighter-rouge">main</code> method and you don’t need to put your code in functions. But just because you don’t have to use functions, doesn’t mean you can’t.</p>
+
+<div class="language-kotlin highlighter-rouge"><div class="highlight"><pre class="highlight"><code>
+    <span class="kd">val</span> <span class="py">greeting</span> <span class="p">=</span> <span class="nf">personalizedGreeting</span><span class="p">(</span><span class="s">"Craig"</span><span class="p">)</span>
+    <span class="nf">println</span><span class="p">(</span><span class="n">greeting</span><span class="p">)</span>
+
+    <span class="k">fun</span> <span class="nf">personalizedGreeting</span><span class="p">(</span><span class="n">name</span><span class="p">:</span> <span class="nc">String</span><span class="p">)</span> <span class="p">:</span> <span class="nc">String</span> <span class="p">{</span>
+        <span class="k">return</span> <span class="s">"Hello $name!"</span>
+    <span class="p">}</span>  
+
+    <span class="c1">// Hello Craig! </span>
+
+
+</code></pre></div></div>
+
+<h2 id="passing-arguments">Passing arguments</h2>
+<p>You have access to a variable called <code class="language-plaintext highlighter-rouge">args</code> in the script, which will be magically populated for you with String arguments passed in when invoking the script.</p>
+
+<div class="language-kotlin highlighter-rouge"><div class="highlight"><pre class="highlight"><code>
+<span class="nf">println</span><span class="p">(</span><span class="s">"Script is running with ${args.size} args passed"</span><span class="p">)</span>
+
+<span class="k">for</span><span class="p">(</span><span class="n">arg</span> <span class="k">in</span> <span class="n">args</span><span class="p">)</span> <span class="p">{</span>
+    <span class="nf">println</span><span class="p">(</span><span class="s">"arg: $arg"</span><span class="p">)</span>
+<span class="p">}</span>
+
+</code></pre></div></div>
+
+<p>Pass in arguments after the script name; separate with spaces.</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>./hello-world.kts foo bar 'one with spaces'
+</code></pre></div></div>
+
+<p>This will output:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>// Script is running with 3 args passed
+// arg: foo
+// arg: bar
+// arg: one with spaces
+</code></pre></div></div>
+
+<h2 id="accessing-other-classes">Accessing Other Classes</h2>
+<p>Need access to other classes? You can add an import statement before you use them.</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>import java.io.File
+</code></pre></div></div>
+
+<h2 id="gradle--maven-dependencies">Gradle / Maven Dependencies</h2>
+<p>If your code depends on dependencies, you can even reference these directly in the script file. It will automatically pull them down the first time the script is run (meaning you’ll need internet access for that first time).</p>
+
+<p>Use the normal Gradle-style dependency declaration, for declaring your <code class="language-plaintext highlighter-rouge">groupId</code>, <code class="language-plaintext highlighter-rouge">artifactId</code> and <code class="language-plaintext highlighter-rouge">version</code>.</p>
+
+<div class="language-kotlin highlighter-rouge"><div class="highlight"><pre class="highlight"><code>
+    <span class="err">@</span><span class="n">file</span><span class="p">:</span><span class="nc">DependsOn</span><span class="p">(</span><span class="s">"com.squareup.retrofit2:retrofit:2.5.0"</span><span class="p">)</span>
+
+    <span class="k">import</span> <span class="nn">retrofit2.Retrofit</span>
+
+    <span class="kd">val</span> <span class="py">retrofit</span> <span class="p">=</span> <span class="nc">Retrofit</span><span class="p">.</span><span class="nc">Builder</span><span class="p">()</span>
+        <span class="p">.</span><span class="nf">baseUrl</span><span class="p">(</span><span class="s">"https://api.github.com/"</span><span class="p">)</span>
+        <span class="p">.</span><span class="nf">build</span><span class="p">();</span>
+
+</code></pre></div></div>
+
+<h2 id="invoking-a-bash-script-from-kscript">Invoking a bash script from kscript</h2>
+<p>You can run a bash script using this handy function.</p>
+
+<div class="language-kotlin highlighter-rouge"><div class="highlight"><pre class="highlight"><code>
+    <span class="k">import</span> <span class="nn">java.io.File</span>
+
+    <span class="k">fun</span> <span class="nc">String</span><span class="p">.</span><span class="nf">exec</span><span class="p">(</span><span class="n">dir</span><span class="p">:</span> <span class="nc">File</span><span class="p">?</span> <span class="p">=</span> <span class="k">null</span><span class="p">):</span> <span class="nc">Int</span> <span class="p">{</span>
+        <span class="k">return</span> <span class="nc">ProcessBuilder</span><span class="p">(</span><span class="s">"/bin/sh"</span><span class="p">,</span> <span class="s">"-c"</span><span class="p">,</span> <span class="k">this</span><span class="p">)</span>
+            <span class="p">.</span><span class="nf">redirectErrorStream</span><span class="p">(</span><span class="k">true</span><span class="p">)</span>
+            <span class="p">.</span><span class="nf">inheritIO</span><span class="p">()</span>
+            <span class="p">.</span><span class="nf">directory</span><span class="p">(</span><span class="n">dir</span><span class="p">)</span>
+            <span class="p">.</span><span class="nf">start</span><span class="p">()</span>
+            <span class="p">.</span><span class="nf">waitFor</span><span class="p">()</span>
+    <span class="p">}</span>
+
+</code></pre></div></div>
+
+<p>You should copy this into your script. To make use of it, define a string which matches your script name, and call the <code class="language-plaintext highlighter-rouge">exec</code> extension function on it.</p>
+
+<p>For example, if you had this bash script called <code class="language-plaintext highlighter-rouge">bash-script.sh</code></p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>#!/bin/bash
+
+echo "Hello from bash"
+</code></pre></div></div>
+
+<p>You can execute this script (if you’ve included the extension function above) like this:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>"./bash-script.sh".exec()
+</code></pre></div></div>
+
+<h2 id="links">Links</h2>
+<p><a href="https://github.com/holgerbrandl/kscript">kscript on GitHub</a></p>
+
+
+<a href='https://cdrussell.github.io//'>Home</a>
+
+
+      </section>
+    </div>
+    <footer>
+    </footer>
+    <!--[if !IE]><script>fixScale(document);</script><![endif]-->
+  </body>
+</html>

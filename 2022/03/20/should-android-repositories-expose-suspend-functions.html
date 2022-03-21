@@ -1,0 +1,207 @@
+<!doctype html>
+<html lang="en-US">
+  <head>
+    <meta charset="utf-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+
+<!-- Begin Jekyll SEO tag v2.7.1 -->
+<title>Should Android Repositories expose suspend functions? | craigrussell</title>
+<meta name="generator" content="Jekyll v4.2.1" />
+<meta property="og:title" content="Should Android Repositories expose suspend functions?" />
+<meta name="author" content="Craig Russell" />
+<meta property="og:locale" content="en_US" />
+<meta name="description" content="Discusses whether the Repository layer should expose suspend functions or not." />
+<meta property="og:description" content="Discusses whether the Repository layer should expose suspend functions or not." />
+<link rel="canonical" href="https://cdrussell.github.io//2022/03/20/should-android-repositories-expose-suspend-functions" />
+<meta property="og:url" content="https://cdrussell.github.io//2022/03/20/should-android-repositories-expose-suspend-functions" />
+<meta property="og:site_name" content="craigrussell" />
+<meta property="og:type" content="article" />
+<meta property="article:published_time" content="2022-03-20T22:20:00+00:00" />
+<meta name="twitter:card" content="summary" />
+<meta property="twitter:title" content="Should Android Repositories expose suspend functions?" />
+<script type="application/ld+json">
+{"description":"Discusses whether the Repository layer should expose suspend functions or not.","url":"https://cdrussell.github.io//2022/03/20/should-android-repositories-expose-suspend-functions","@type":"BlogPosting","headline":"Should Android Repositories expose suspend functions?","dateModified":"2022-03-20T22:20:00+00:00","datePublished":"2022-03-20T22:20:00+00:00","mainEntityOfPage":{"@type":"WebPage","@id":"https://cdrussell.github.io//2022/03/20/should-android-repositories-expose-suspend-functions"},"author":{"@type":"Person","name":"Craig Russell"},"@context":"https://schema.org"}</script>
+<!-- End Jekyll SEO tag -->
+
+
+    <link rel="stylesheet" href="/assets/css/style.css?v=">
+    <script src="/assets/js/scale.fix.js"></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+
+    <!--[if lt IE 9]>
+    <script src="//html5shiv.googlecode.com/svn/trunk/html5.js"></script>
+    <![endif]-->
+
+    <!-- start custom head snippets, customize with your own _includes/head-custom.html file -->
+
+<!-- Setup Google Analytics -->
+
+
+
+<!-- You can set your favicon here -->
+<!-- link rel="shortcut icon" type="image/x-icon" href="/favicon.ico" -->
+
+<!-- end custom head snippets -->
+
+  </head>
+  <body>
+    <div class="wrapper">
+      <header >
+        <a href='https://cdrussell.github.io//'>
+          <h1>craigrussell</h1>
+          
+            <p>Technical blog from Craig Russell.</p>
+          
+        </a>
+
+        <nav>
+  <div style="
+         top: 0px;
+         right: 0px;
+         position: absolute">
+
+    <a href="/about">
+      <figure>
+        <img src="/images/me-round.png"
+             style="
+              height: 50px;
+              display: block;
+              margin-left: auto;
+              margin-right: auto;
+              "
+             alt="Photo of me, wearing a bright yellow t-shirt with a bright blue, cloudy sky in the background"
+        />
+        <figcaption style="text-align:justify" >About me</figcaption>
+      </figure>
+    </a>
+  </div>
+</nav>
+
+
+        <p> </p>
+      </header>
+      <section>
+
+      <h1 id="should-repositories-expose-suspend-functions">Should Repositories expose suspend functions?</h1>
+<p><em>When using <code class="language-plaintext highlighter-rouge">coroutines</code> in Android, you have to choose which functions will be marked as <code class="language-plaintext highlighter-rouge">suspend</code>. How and where you do this across your app is an architectural decision. This post discusses whether the Repository layer should expose <code class="language-plaintext highlighter-rouge">suspend</code> functions or not.</em></p>
+
+<h2 id="what-is-a-repository-in-this-context">What is a Repository in this context?</h2>
+<p>A common layer in Android app architectures is a <strong>Repository</strong> layer. Exactly where it sits in your layers, and who its immediate neighbours are, might vary depending on your architecture flavour, but a Repository will typically sit somewhere <em>below</em> your view layer and <em>above</em> your data source layer. Its purpose, in part, is to let you decouple and encapsulate the exact mechanism of data storage from the layers above.</p>
+
+<p><img src="/images/repository-architecture-overview.png" alt="high level architecture diagram showing repository below UI layer and above data source" width="300" style="display: block; margin-left: auto; margin-right: auto;" /></p>
+<p style="text-align: center;"><a href="https://developer.android.com/jetpack/guide/data-layer">Image Source</a></p>
+
+<p>Your <code class="language-plaintext highlighter-rouge">Activities</code>, <code class="language-plaintext highlighter-rouge">Fragments</code>, <code class="language-plaintext highlighter-rouge">ViewModels</code> et al. should not need to know precisely <em>how</em> you are storing data; that is an implementation detail that can be forgotten about at those higher view layers. The view layer can talk to a Repository to get and save data, all without the need to understand <code class="language-plaintext highlighter-rouge">Room DB</code>, <code class="language-plaintext highlighter-rouge">DataStore</code>, <code class="language-plaintext highlighter-rouge">SharedPreferences</code>, <code class="language-plaintext highlighter-rouge">Files</code> etc…</p>
+
+<p>This post focuses on <code class="language-plaintext highlighter-rouge">suspend</code> functions, but more generally covers whether to have coroutine-specific features exposed by your Repository APIs, and so extends to whether to return <code class="language-plaintext highlighter-rouge">Flow</code> or not.</p>
+
+<h2 id="data-access-needs-to-consider-threading">Data access needs to consider threading</h2>
+<p>In an ideal world, reading and writing data would be so quick to perform that we could do it from the main thread, but that’s not the case. Often, data access involves making network calls and even when all operations are done on local storage only, you still can’t be guaranteed they’ll happen quickly enough to be allowable on the main thread (data access speeds are so variable on Android, IO disk resource contention might slow it down etc…).</p>
+
+<p>Whether making remote network calls or reading/writing from local storage, we need to assume that it can take a few moments to complete and avoid using the main thread.</p>
+
+<h2 id="who-chooses-the-thread">Who chooses the thread?</h2>
+<p>If we consider the scenario where an <code class="language-plaintext highlighter-rouge">Activity</code> talks to a <code class="language-plaintext highlighter-rouge">ViewModel</code> which talks to a <code class="language-plaintext highlighter-rouge">Repository</code> which talks to a <code class="language-plaintext highlighter-rouge">Room DAO</code>, who is responsible for ensuring the data access happens off of the main thread?</p>
+
+<p>Specifically at the Repository level, should the Repository internally handle the threading or should that be left up to the caller of the Repository to get it right?</p>
+
+<p>Let’s say we have this Repository, which uses a <code class="language-plaintext highlighter-rouge">Room DAO</code> to persist data.</p>
+
+<div class="language-kotlin highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="kd">class</span> <span class="nc">BookmarksRepository</span><span class="p">(</span><span class="k">private</span> <span class="kd">val</span> <span class="py">bookmarksDao</span><span class="p">:</span> <span class="nc">BookmarksDao</span><span class="p">)</span> <span class="p">{</span>
+    
+    <span class="k">fun</span> <span class="nf">insert</span><span class="p">(</span><span class="n">bookmark</span><span class="p">:</span> <span class="nc">Bookmark</span><span class="p">)</span> <span class="p">{</span>
+        <span class="n">bookmarksDao</span><span class="p">.</span><span class="nf">insert</span><span class="p">(</span><span class="n">bookmark</span><span class="p">)</span>
+    <span class="p">}</span>
+    
+<span class="p">}</span>
+</code></pre></div></div>
+
+<p>The <code class="language-plaintext highlighter-rouge">insert</code> function in this example is not marked as <code class="language-plaintext highlighter-rouge">suspend</code>. Should it be?</p>
+
+<h2 id="arguments-against-exposing-suspend-functions">Arguments against exposing suspend functions</h2>
+
+<ul style="list-style-type:none;padding-left:20px">
+    <li> ➖ Forces callers to use coroutines </li>
+    <li> ➖ Calling code should own threading decisions </li>
+</ul>
+
+<h3 id="forces-callers-to-use-coroutines">Forces callers to use coroutines</h3>
+<p>An argument against exposing <code class="language-plaintext highlighter-rouge">suspend</code> functions from the Repository is that it forces all callers to be coroutine-aware.</p>
+<ul>
+  <li>The only way to call a <code class="language-plaintext highlighter-rouge">suspend</code> function is from inside a coroutine</li>
+  <li>Therefore, you create demands on all calling code that it also handle coroutines to some degree</li>
+  <li>This dependency on coroutines <em>leaks</em> and propagates throughout your codebase</li>
+</ul>
+
+<h3 id="calling-code-should-own-threading-decisions">Calling code should own threading decisions</h3>
+<p>Another argument is that the calling code can (and should) make decisions about the threading</p>
+<ul>
+  <li>Each caller might have particular needs, and can make the decision on threading based on its own known needs</li>
+  <li>The Repository functions can be thread-agnostic and solely execute the logic on the thread it was invoked from, without trying to also handle threading</li>
+</ul>
+
+<h2 id="arguments-for-exposing-suspend-functions">Arguments for exposing suspend functions</h2>
+<ul style="list-style-type:none;padding-left:20px">
+    <li> ➕ The best decisions on threading requires knowledge of internal workings </li>
+    <li> ➕ Forces correctness on calling code </li>
+    <li> ➕ You are forced to think </li>
+</ul>
+
+<h3 id="the-best-decisions-on-threading-requires-knowledge-of-internal-workings">The best decisions on threading requires knowledge of internal workings</h3>
+<p>The caller can’t always make the best threading decisions without knowing the internal workings of the Repository (which we want to avoid).</p>
+
+<p>For example, it might seem reasonable for the calling code to always ensure it executes the Repository function on a background thread (e.g, <code class="language-plaintext highlighter-rouge">Dispatchers.IO</code>), but that might create inefficiency. If using <code class="language-plaintext highlighter-rouge">Room</code> for example, it is wasteful to switch dispatcher at a higher level because <code class="language-plaintext highlighter-rouge">Room</code> handles this internally.</p>
+<blockquote>
+  <p><em>your code should not use <code class="language-plaintext highlighter-rouge">withContext(Dispatchers.IO)</code> to call suspending room queries. It will complicate the code and make your queries run slower.</em> (<a href="https://medium.com/androiddevelopers/coroutines-on-android-part-iii-real-work-2ba8a2ec2f45">Source</a>)</p>
+</blockquote>
+
+<p>In other cases, you might need to perform some complex operations after retrieving the data from the data source, but before returning it from the Repository.</p>
+<ul>
+  <li>Ideally, you’d perform the data retrieval on a dispatcher made for IO (e.g., <code class="language-plaintext highlighter-rouge">Dispatchers.IO</code>) and then jump to a dispatcher made for more CPU-intensive operations (e.g., <code class="language-plaintext highlighter-rouge">Dispatchers.Default</code>).</li>
+  <li>If you are relying on the caller to dictate the threading model, this is very hard for a caller to get right without knowing far too much about the inner workings of the Repository.</li>
+</ul>
+
+<h3 id="forces-correctness-on-calling-code">Forces correctness on calling code</h3>
+<p>Another argument for exposing <code class="language-plaintext highlighter-rouge">suspend</code> functions is that it’s hard for callers to get threading right by themselves and the use of <code class="language-plaintext highlighter-rouge">suspend</code> can force correctness upon them.</p>
+
+<p>Use of <code class="language-plaintext highlighter-rouge">suspend</code> alone could still allow a caller to call it from a coroutine executing on the main thread (e.g., <code class="language-plaintext highlighter-rouge">Dispatchers.Main</code>). So how does the <code class="language-plaintext highlighter-rouge">suspend</code> function offer a way to reduce errors here?</p>
+
+<ul>
+  <li>Internally, inside the <code class="language-plaintext highlighter-rouge">suspend</code> function in the Repository, you can ensure the heavier operations happen on the correct dispatcher.</li>
+  <li>You can use <code class="language-plaintext highlighter-rouge">withContext()</code> and provide <code class="language-plaintext highlighter-rouge">Dispatchers.IO</code>, <code class="language-plaintext highlighter-rouge">Dispatchers.Default</code> as well as your own custom dispatchers; ensuring each is used at the correct times</li>
+  <li>You can make all your Repository functions main-safe; safe to call from the main thread without the caller needing to know precisely what’s happening internally.*</li>
+  <li>The calling code can’t get it wrong</li>
+</ul>
+
+<h4 id="main-safety">*Main-safety</h4>
+<p>The ability to call Repository functions in a main-safe way isn’t enforced by the compiler; you as developer of the Repository still have to do that. It’s trivial to do with <code class="language-plaintext highlighter-rouge">withContext</code>, but you still have to do it. But it’s easier to get that right once when writing the Repository function than having to get it right from every caller that calls it in the future.</p>
+
+<p><em>Interestingly, Google go so far as to state that all suspend functions should be main-safe, but that’s a different debate for a different day. 😅</em></p>
+
+<blockquote>
+  <p>Suspend functions should be main-safe, meaning they’re safe to call from the main thread. If a class is doing long-running blocking operations in a coroutine, it’s in charge of moving the execution off the main thread using withContext. This applies to all classes in your app, regardless of the part of the architecture the class is in.</p>
+</blockquote>
+
+<h3 id="you-are-made-to-think">You are made to think</h3>
+<p>An immediate effect of trying to call a <code class="language-plaintext highlighter-rouge">suspend</code> function is that you get a big hint the function might not complete quickly, and that this requires you to think.</p>
+<ul>
+  <li>If calling a function not marked with <code class="language-plaintext highlighter-rouge">suspend</code>, without anything to enforce otherwise, it’s easy to end up assuming a call will be fast and making it from the UI thread</li>
+  <li><em>Don’t make me think… unless I’m about to use a <a href="https://en.wiktionary.org/wiki/footgun">footgun</a></em>.</li>
+</ul>
+
+<h2 id="dont-keep-me-in-suspense-whats-the-recommendation">Don’t keep me in suspense; what’s the recommendation?</h2>
+<p>While I get the sentiments behind some counter-arguments, my recommendation <strong>is to</strong> expose <code class="language-plaintext highlighter-rouge">suspend</code> functions from the Repository layer.</p>
+
+<p>It is also a recommended practice by Google, in their <code class="language-plaintext highlighter-rouge">Coroutines Best Practices</code> guide: <a href="https://developer.android.com/kotlin/coroutines/coroutines-best-practices">https://developer.android.com/kotlin/coroutines/coroutines-best-practices</a></p>
+
+
+<a href='https://cdrussell.github.io//'>Home</a>
+
+
+      </section>
+    </div>
+    <footer>
+    </footer>
+    <!--[if !IE]><script>fixScale(document);</script><![endif]-->
+  </body>
+</html>

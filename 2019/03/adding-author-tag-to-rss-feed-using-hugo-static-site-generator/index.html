@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="en-US">
+  <head>
+    <meta charset="utf-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+
+<!-- Begin Jekyll SEO tag v2.7.1 -->
+<title>Adding Author tag to RSS Feed using Hugo static site generator | craigrussell</title>
+<meta name="generator" content="Jekyll v4.2.1" />
+<meta property="og:title" content="Adding Author tag to RSS Feed using Hugo static site generator" />
+<meta name="author" content="Craig Russell" />
+<meta property="og:locale" content="en_US" />
+<meta name="description" content="How to include the author tag in the generated RSS feed for a Hugo-generated site." />
+<meta property="og:description" content="How to include the author tag in the generated RSS feed for a Hugo-generated site." />
+<link rel="canonical" href="https://cdrussell.github.io//2019/03/adding-author-tag-to-rss-feed-using-hugo-static-site-generator/" />
+<meta property="og:url" content="https://cdrussell.github.io//2019/03/adding-author-tag-to-rss-feed-using-hugo-static-site-generator/" />
+<meta property="og:site_name" content="craigrussell" />
+<meta property="og:type" content="article" />
+<meta property="article:published_time" content="2019-03-14T01:34:15+00:00" />
+<meta name="twitter:card" content="summary" />
+<meta property="twitter:title" content="Adding Author tag to RSS Feed using Hugo static site generator" />
+<script type="application/ld+json">
+{"description":"How to include the author tag in the generated RSS feed for a Hugo-generated site.","url":"https://cdrussell.github.io//2019/03/adding-author-tag-to-rss-feed-using-hugo-static-site-generator/","@type":"BlogPosting","headline":"Adding Author tag to RSS Feed using Hugo static site generator","dateModified":"2019-03-14T01:34:15+00:00","datePublished":"2019-03-14T01:34:15+00:00","mainEntityOfPage":{"@type":"WebPage","@id":"https://cdrussell.github.io//2019/03/adding-author-tag-to-rss-feed-using-hugo-static-site-generator/"},"author":{"@type":"Person","name":"Craig Russell"},"@context":"https://schema.org"}</script>
+<!-- End Jekyll SEO tag -->
+
+
+    <link rel="stylesheet" href="/assets/css/style.css?v=">
+    <script src="/assets/js/scale.fix.js"></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+
+    <!--[if lt IE 9]>
+    <script src="//html5shiv.googlecode.com/svn/trunk/html5.js"></script>
+    <![endif]-->
+
+    <!-- start custom head snippets, customize with your own _includes/head-custom.html file -->
+
+<!-- Setup Google Analytics -->
+
+
+
+<!-- You can set your favicon here -->
+<!-- link rel="shortcut icon" type="image/x-icon" href="/favicon.ico" -->
+
+<!-- end custom head snippets -->
+
+  </head>
+  <body>
+    <div class="wrapper">
+      <header >
+        <a href='https://cdrussell.github.io//'>
+          <h1>craigrussell</h1>
+          
+            <p>Technical blog from Craig Russell.</p>
+          
+        </a>
+
+        <nav>
+  <div style="
+         top: 0px;
+         right: 0px;
+         position: absolute">
+
+    <a href="/about">
+      <figure>
+        <img src="/images/me-round.png"
+             style="
+              height: 50px;
+              display: block;
+              margin-left: auto;
+              margin-right: auto;
+              "
+             alt="Photo of me, wearing a bright yellow t-shirt with a bright blue, cloudy sky in the background"
+        />
+        <figcaption style="text-align:justify" >About me</figcaption>
+      </figure>
+    </a>
+  </div>
+</nav>
+
+
+        <p> </p>
+      </header>
+      <section>
+
+      <p><em>This post details how to include the author tag in the generated RSS feed for a Hugo-generated site.</em></p>
+
+<h2 id="default-rss-template">Default RSS Template</h2>
+<p>Hugo comes equipped with a template by default. In fact you might be pleasantly surprised to discover your site has an RSS feed already. You can try it out by visiting your site and adding <code class="language-plaintext highlighter-rouge">/index.xml</code> on the end of either of your home page, or your section containing your blog posts. e.g.,</p>
+
+<ul>
+  <li><a href="https://craigrussell.io/index.xml">https://craigrussell.io/index.xml</a></li>
+  <li><a href="https://craigrussell.io/posts/index.xml">https://craigrussell.io/posts/index.xml</a></li>
+</ul>
+
+<h2 id="customising-the-template">Customising The Template</h2>
+<p>While the default template might be enough for some, others are going to want to customise it. For me, I found that I wanted to include an <code class="language-plaintext highlighter-rouge">&lt;author&gt;</code> tag in my posts.</p>
+
+<p>You can either grab the default template and add the <code class="language-plaintext highlighter-rouge">&lt;author&gt;</code> tag into it (recommended approach) or just skip ahead and grab my one from the gist below. I would recommend using the default one as it may contain newer changes from Hugo that my gist won’t have over time.</p>
+
+<p>To do this, we must start by grabbing a copy of the embedded RSS template. We’ll drop that into your project and customise it to include the author tag.</p>
+
+<ol>
+  <li>Get the <a href="https://gohugo.io/templates/rss/#the-embedded-rss-xml">default Hugo RSS template</a></li>
+  <li>Save the template into your Hugo directory as <code class="language-plaintext highlighter-rouge">layouts/_default/rss.xml</code></li>
+  <li>Add the <code class="language-plaintext highlighter-rouge">&lt;author&gt;</code> tag in. You’ll probably want to add it under the <code class="language-plaintext highlighter-rouge">&lt;item&gt;</code> tag, and you may additionally want to add it at the top level.</li>
+  <li>Ensure you have your name detailed in the site config (i.e.,  <code class="language-plaintext highlighter-rouge">config.yaml</code>, <code class="language-plaintext highlighter-rouge">config.toml</code> or <code class="language-plaintext highlighter-rouge">config.json</code> file)</li>
+</ol>
+
+<p>When you’re done, it should look like this 👇</p>
+<noscript><pre>400: Invalid request</pre></noscript>
+<script src="https://gist.github.com/55a019f576eb10802543e5d1dcc65743.js"> </script>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>// config.yaml
+
+author: 
+  name: Craig Russell
+</code></pre></div></div>
+
+<h2 id="final-rss">Final RSS</h2>
+<p>Now when you publish the site and access the RSS XML, you’ll see the <code class="language-plaintext highlighter-rouge">&lt;author&gt;</code> is now included.</p>
+
+<p><img src="/images/author-tag-in-rss-xml.png" alt="RSS XML showing the included author tag" /></p>
+
+
+<a href='https://cdrussell.github.io//'>Home</a>
+
+
+      </section>
+    </div>
+    <footer>
+    </footer>
+    <!--[if !IE]><script>fixScale(document);</script><![endif]-->
+  </body>
+</html>

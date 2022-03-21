@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="en-US">
+  <head>
+    <meta charset="utf-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+
+<!-- Begin Jekyll SEO tag v2.7.1 -->
+<title>Defining a Live Template for Unit Tests | craigrussell</title>
+<meta name="generator" content="Jekyll v4.2.1" />
+<meta property="og:title" content="Defining a Live Template for Unit Tests" />
+<meta name="author" content="Craig Russell" />
+<meta property="og:locale" content="en_US" />
+<meta name="description" content="How to define a live template in Intellij/Android Studio which can be used to quickly add a unit test in the exact style you prefer." />
+<meta property="og:description" content="How to define a live template in Intellij/Android Studio which can be used to quickly add a unit test in the exact style you prefer." />
+<link rel="canonical" href="https://cdrussell.github.io//2017/12/29/defining-a-live-template-for-unit-tests" />
+<meta property="og:url" content="https://cdrussell.github.io//2017/12/29/defining-a-live-template-for-unit-tests" />
+<meta property="og:site_name" content="craigrussell" />
+<meta property="og:type" content="article" />
+<meta property="article:published_time" content="2017-12-29T00:00:00+00:00" />
+<meta name="twitter:card" content="summary" />
+<meta property="twitter:title" content="Defining a Live Template for Unit Tests" />
+<script type="application/ld+json">
+{"description":"How to define a live template in Intellij/Android Studio which can be used to quickly add a unit test in the exact style you prefer.","url":"https://cdrussell.github.io//2017/12/29/defining-a-live-template-for-unit-tests","@type":"BlogPosting","headline":"Defining a Live Template for Unit Tests","dateModified":"2017-12-29T00:00:00+00:00","datePublished":"2017-12-29T00:00:00+00:00","mainEntityOfPage":{"@type":"WebPage","@id":"https://cdrussell.github.io//2017/12/29/defining-a-live-template-for-unit-tests"},"author":{"@type":"Person","name":"Craig Russell"},"@context":"https://schema.org"}</script>
+<!-- End Jekyll SEO tag -->
+
+
+    <link rel="stylesheet" href="/assets/css/style.css?v=">
+    <script src="/assets/js/scale.fix.js"></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+
+    <!--[if lt IE 9]>
+    <script src="//html5shiv.googlecode.com/svn/trunk/html5.js"></script>
+    <![endif]-->
+
+    <!-- start custom head snippets, customize with your own _includes/head-custom.html file -->
+
+<!-- Setup Google Analytics -->
+
+
+
+<!-- You can set your favicon here -->
+<!-- link rel="shortcut icon" type="image/x-icon" href="/favicon.ico" -->
+
+<!-- end custom head snippets -->
+
+  </head>
+  <body>
+    <div class="wrapper">
+      <header >
+        <a href='https://cdrussell.github.io//'>
+          <h1>craigrussell</h1>
+          
+            <p>Technical blog from Craig Russell.</p>
+          
+        </a>
+
+        <nav>
+  <div style="
+         top: 0px;
+         right: 0px;
+         position: absolute">
+
+    <a href="/about">
+      <figure>
+        <img src="/images/me-round.png"
+             style="
+              height: 50px;
+              display: block;
+              margin-left: auto;
+              margin-right: auto;
+              "
+             alt="Photo of me, wearing a bright yellow t-shirt with a bright blue, cloudy sky in the background"
+        />
+        <figcaption style="text-align:justify" >About me</figcaption>
+      </figure>
+    </a>
+  </div>
+</nav>
+
+
+        <p> </p>
+      </header>
+      <section>
+
+      <h1 id="defining-a-live-template-for-unit-tests">Defining a Live Template for Unit Tests</h1>
+<p><em>This post will describe how to define a live template in Intellij/Android Studio which can be used to quickly add a unit test in the exact style you prefer.</em></p>
+
+<p>When I add a new unit test, I want it to be as quick as possible but I also need to adhere to the team’s style on unit test naming. I want to define my when/then conditions, and have the cursor ready to type with as little effort as possible.</p>
+
+<h2 id="creating-the-live-template">Creating the Live Template</h2>
+<p>Create a live template, from the <code class="language-plaintext highlighter-rouge">Preferences</code> menu.</p>
+
+<p><code class="language-plaintext highlighter-rouge">Editor -&gt; Live Templates</code></p>
+
+<p><img src="/images/unit-test-live-templating-defining.png" alt="defining the live template" width="500" style="display: block; margin-left: auto; margin-right: auto;" /></p>
+
+<p>Create new template, and give it an abbreviation. I’ve used test in this example. This is the word you need to type, followed by <code class="language-plaintext highlighter-rouge">ENTER</code> key, to invoke the live template.</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>@org.junit.Test
+fun when$WHEN$Then$THEN$() {
+    $END$
+}
+</code></pre></div></div>
+
+<p>Adapt the template body to suit your team’s unit test naming conventions. Note that <code class="language-plaintext highlighter-rouge">@org.junit.Test</code> will automatically resolve to simply <code class="language-plaintext highlighter-rouge">@Test</code> so long as <strong>Shorten FQ names</strong> is checked. This will also add the appropriate import statement for you if it isn’t already added.</p>
+
+<p>For applicable contexts, I’ve chosen <strong>Kotlin Classes</strong>.</p>
+
+<h2 id="template-in-action">Template in Action</h2>
+<ol>
+  <li>I type out the word test and hit <code class="language-plaintext highlighter-rouge">ENTER</code> key. It automatically populates the surrounding boilerplate and sets my cursor ready to type the <em>when</em> condition for my unit test name.</li>
+  <li>Hitting <code class="language-plaintext highlighter-rouge">ENTER</code> again sets the cursor ready to type the then condition.</li>
+  <li>A final <code class="language-plaintext highlighter-rouge">ENTER</code>, and the cursor is in the body of the test ready to go.</li>
+</ol>
+
+<iframe width="560" height="315" src="https://www.youtube-nocookie.com/embed/jDL8f8H1uUg" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen=""></iframe>
+
+
+<a href='https://cdrussell.github.io//'>Home</a>
+
+
+      </section>
+    </div>
+    <footer>
+    </footer>
+    <!--[if !IE]><script>fixScale(document);</script><![endif]-->
+  </body>
+</html>

@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="en-US">
+  <head>
+    <meta charset="utf-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+
+<!-- Begin Jekyll SEO tag v2.7.1 -->
+<title>Code Confessions | craigrussell</title>
+<meta name="generator" content="Jekyll v4.2.1" />
+<meta property="og:title" content="Code Confessions" />
+<meta name="author" content="Craig Russell" />
+<meta property="og:locale" content="en_US" />
+<meta name="description" content="Code Confessions; openly confessing your coding sins to your team. Involve your team and absolve yourself." />
+<meta property="og:description" content="Code Confessions; openly confessing your coding sins to your team. Involve your team and absolve yourself." />
+<link rel="canonical" href="https://cdrussell.github.io//2019/07/code-confessions/" />
+<meta property="og:url" content="https://cdrussell.github.io//2019/07/code-confessions/" />
+<meta property="og:site_name" content="craigrussell" />
+<meta property="og:type" content="article" />
+<meta property="article:published_time" content="2019-07-25T23:16:12+00:00" />
+<meta name="twitter:card" content="summary" />
+<meta property="twitter:title" content="Code Confessions" />
+<script type="application/ld+json">
+{"description":"Code Confessions; openly confessing your coding sins to your team. Involve your team and absolve yourself.","url":"https://cdrussell.github.io//2019/07/code-confessions/","@type":"BlogPosting","headline":"Code Confessions","dateModified":"2019-07-25T23:16:12+00:00","datePublished":"2019-07-25T23:16:12+00:00","mainEntityOfPage":{"@type":"WebPage","@id":"https://cdrussell.github.io//2019/07/code-confessions/"},"author":{"@type":"Person","name":"Craig Russell"},"@context":"https://schema.org"}</script>
+<!-- End Jekyll SEO tag -->
+
+
+    <link rel="stylesheet" href="/assets/css/style.css?v=">
+    <script src="/assets/js/scale.fix.js"></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+
+    <!--[if lt IE 9]>
+    <script src="//html5shiv.googlecode.com/svn/trunk/html5.js"></script>
+    <![endif]-->
+
+    <!-- start custom head snippets, customize with your own _includes/head-custom.html file -->
+
+<!-- Setup Google Analytics -->
+
+
+
+<!-- You can set your favicon here -->
+<!-- link rel="shortcut icon" type="image/x-icon" href="/favicon.ico" -->
+
+<!-- end custom head snippets -->
+
+  </head>
+  <body>
+    <div class="wrapper">
+      <header >
+        <a href='https://cdrussell.github.io//'>
+          <h1>craigrussell</h1>
+          
+            <p>Technical blog from Craig Russell.</p>
+          
+        </a>
+
+        <nav>
+  <div style="
+         top: 0px;
+         right: 0px;
+         position: absolute">
+
+    <a href="/about">
+      <figure>
+        <img src="/images/me-round.png"
+             style="
+              height: 50px;
+              display: block;
+              margin-left: auto;
+              margin-right: auto;
+              "
+             alt="Photo of me, wearing a bright yellow t-shirt with a bright blue, cloudy sky in the background"
+        />
+        <figcaption style="text-align:justify" >About me</figcaption>
+      </figure>
+    </a>
+  </div>
+</nav>
+
+
+        <p> </p>
+      </header>
+      <section>
+
+      <p><em>This post describes code confessions; openly confessing your coding sins to your team.</em></p>
+
+<p>I want to tell you about something I do regularly which I call a <code class="language-plaintext highlighter-rouge">Code Confession</code>. It’s how I unburden myself from the guilt of having written bad code, bring it to the attention of the team to improve it and seek absolution for my coding crimes.</p>
+
+<p><img alt="sign saying next in line for confession" src="/images/confession.jpg" /></p>
+
+<p>Let’s say I’ve written some code but there is something I just don’t like about it. There is a smell. The code solves the core problem though, and I know that if I had to, I could live with it. But yet I know that there is still something bad about it and, despite my own best efforts, it’s the best I’ve come up with.</p>
+
+<p>The smell could be anything; it could be as simple as a method I can’t quite name well, or it could be more of an architectural decision, an added dependency on a library I didn’t want to add, a hacky workaround etc… There are a million ways to write smelly code, and I’ve probably done them all at one time or another.</p>
+
+<p>We all write bad code sometimes; there is no shame in it. Sometimes it’s because we don’t know any better. Sometimes it’s because we have to take shortcuts to get something shipped. Sometimes it’s because we’re tired. Sometimes it’s because we’re trying to juggle too many tasks at the same time. Sometimes it’s because we’re just too close to the problem we’re trying to solve.</p>
+
+<p>No matter the particular reason for the bad code, the thing which often helps is to borrow a second pair of eyes on the problem. And so I grab a teammate on a call…</p>
+
+<p><em>“I have a confession to make…“</em> is my opening gambit. My teammates know what’s coming next; they’ve heard my confessions many times before.</p>
+
+<ul>
+  <li><em>“I can’t think of a way to improve this…“</em></li>
+  <li><em>“You’re going to hate me but I’ve had to ….”</em></li>
+  <li><em>“I’ve spent the morning cleaning up vomit from my desk as a result of the code I’ve just written, but…“</em></li>
+</ul>
+
+<p>And I get it all out in the open. You see, the worst thing you can do with this is to bury it. You can try to hide it in the codebase and hope no one notices in the code review. You can leave it festering in there and hope you’re never held accountable for it. But you are accountable. Everyone on the team is accountable for it. And this is why <code class="language-plaintext highlighter-rouge">Code Confessions</code> work.</p>
+
+<p>At a Code Confession, I’m telling the team “this code I’ve just written sucks”, and highlighting that it’s a problem for me. But I’m also warning them that this sucky solution, which only exists in my local branch currently, will become their problem soon. Once it is in the main codebase, it’s everyone’s responsibility to look after it.</p>
+
+<p>The <code class="language-plaintext highlighter-rouge">Code Confession</code> is the time for the team to either come up with a better solution or to admit defeat as a group, and humbly accept that it’s the best we can do.</p>
+
+<p>Sometimes during a <code class="language-plaintext highlighter-rouge">Code Confession</code> I’ll hear that actually the solution isn’t all that bad, and that can be nice to hear. But more often than not, we’ll work together to find a better solution. One that smells less and one that the team is going to be happier with long term. By highlighting code I don’t like but can’t improve on my own, and confessing it upfront to the team, we come together to improve it or we agree to live with it.</p>
+
+<p>The team feels satisfied as they got to help solve a problem, I feel better that I’m not carrying this problem alone, and the codebase gets better because everyone feels shared responsibility.</p>
+
+<p>Give <code class="language-plaintext highlighter-rouge">Code Confessions</code> a try the next time you’re left a little unsatisfied with some code you’ve written, and see how good it feels. Involve your team and absolve yourself.</p>
+
+<p><em>Forgive me teammates, for I have sinned…</em></p>
+
+<hr />
+<p><em>Image Attribution: Photo by Shalone Cason on Unsplash</em>
+<a style="background-color:black;color:white;text-decoration:none;padding:4px 6px;font-family:-apple-system, BlinkMacSystemFont, &quot;San Francisco&quot;, &quot;Helvetica Neue&quot;, Helvetica, Ubuntu, Roboto, Noto, &quot;Segoe UI&quot;, Arial, sans-serif;font-size:12px;font-weight:bold;line-height:1.2;display:inline-block;border-radius:3px" href="https://unsplash.com/@shalone86?utm_medium=referral&amp;utm_campaign=photographer-credit&amp;utm_content=creditBadge" target="_blank" rel="noopener noreferrer" title="Download free do whatever you want high-resolution photos from Shalone Cason"><span style="display:inline-block;padding:2px 3px"><svg xmlns="http://www.w3.org/2000/svg" style="height:12px;width:auto;position:relative;vertical-align:middle;top:-2px;fill:white" viewBox="0 0 32 32"><title>unsplash-logo</title><path d="M10 9V0h12v9H10zm12 5h10v18H0V14h10v9h12v-9z"></path></svg></span><span style="display:inline-block;padding:2px 3px">Shalone Cason</span></a></p>
+
+
+<a href='https://cdrussell.github.io//'>Home</a>
+
+
+      </section>
+    </div>
+    <footer>
+    </footer>
+    <!--[if !IE]><script>fixScale(document);</script><![endif]-->
+  </body>
+</html>

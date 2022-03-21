@@ -1,0 +1,1312 @@
+<?xml version="1.0" encoding="utf-8"?><feed xmlns="http://www.w3.org/2005/Atom" ><generator uri="https://jekyllrb.com/" version="4.2.1">Jekyll</generator><link href="https://cdrussell.github.io//feed.xml" rel="self" type="application/atom+xml" /><link href="https://cdrussell.github.io//" rel="alternate" type="text/html" /><updated>2022-03-21T01:35:19+00:00</updated><id>https://cdrussell.github.io//feed.xml</id><title type="html">craigrussell</title><subtitle>Technical blog from Craig Russell.</subtitle><author><name>craig</name></author><entry><title type="html">Should Android Repositories expose suspend functions?</title><link href="https://cdrussell.github.io//2022/03/20/should-android-repositories-expose-suspend-functions" rel="alternate" type="text/html" title="Should Android Repositories expose suspend functions?" /><published>2022-03-20T22:20:00+00:00</published><updated>2022-03-20T22:20:00+00:00</updated><id>https://cdrussell.github.io//2022/03/20/should-android-repositories-expose-suspend-functions</id><content type="html" xml:base="https://cdrussell.github.io//2022/03/20/should-android-repositories-expose-suspend-functions">&lt;h1 id=&quot;should-repositories-expose-suspend-functions&quot;&gt;Should Repositories expose suspend functions?&lt;/h1&gt;
+&lt;p&gt;&lt;em&gt;When using &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;coroutines&lt;/code&gt; in Android, you have to choose which functions will be marked as &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;suspend&lt;/code&gt;. How and where you do this across your app is an architectural decision. This post discusses whether the Repository layer should expose &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;suspend&lt;/code&gt; functions or not.&lt;/em&gt;&lt;/p&gt;
+
+&lt;h2 id=&quot;what-is-a-repository-in-this-context&quot;&gt;What is a Repository in this context?&lt;/h2&gt;
+&lt;p&gt;A common layer in Android app architectures is a &lt;strong&gt;Repository&lt;/strong&gt; layer. Exactly where it sits in your layers, and who its immediate neighbours are, might vary depending on your architecture flavour, but a Repository will typically sit somewhere &lt;em&gt;below&lt;/em&gt; your view layer and &lt;em&gt;above&lt;/em&gt; your data source layer. Its purpose, in part, is to let you decouple and encapsulate the exact mechanism of data storage from the layers above.&lt;/p&gt;
+
+&lt;p&gt;&lt;img src=&quot;/images/repository-architecture-overview.png&quot; alt=&quot;high level architecture diagram showing repository below UI layer and above data source&quot; width=&quot;300&quot; style=&quot;display: block; margin-left: auto; margin-right: auto;&quot; /&gt;&lt;/p&gt;
+&lt;p style=&quot;text-align: center;&quot;&gt;&lt;a href=&quot;https://developer.android.com/jetpack/guide/data-layer&quot;&gt;Image Source&lt;/a&gt;&lt;/p&gt;
+
+&lt;p&gt;Your &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;Activities&lt;/code&gt;, &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;Fragments&lt;/code&gt;, &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;ViewModels&lt;/code&gt; et al. should not need to know precisely &lt;em&gt;how&lt;/em&gt; you are storing data; that is an implementation detail that can be forgotten about at those higher view layers. The view layer can talk to a Repository to get and save data, all without the need to understand &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;Room DB&lt;/code&gt;, &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;DataStore&lt;/code&gt;, &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;SharedPreferences&lt;/code&gt;, &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;Files&lt;/code&gt; etc…&lt;/p&gt;
+
+&lt;p&gt;This post focuses on &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;suspend&lt;/code&gt; functions, but more generally covers whether to have coroutine-specific features exposed by your Repository APIs, and so extends to whether to return &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;Flow&lt;/code&gt; or not.&lt;/p&gt;
+
+&lt;h2 id=&quot;data-access-needs-to-consider-threading&quot;&gt;Data access needs to consider threading&lt;/h2&gt;
+&lt;p&gt;In an ideal world, reading and writing data would be so quick to perform that we could do it from the main thread, but that’s not the case. Often, data access involves making network calls and even when all operations are done on local storage only, you still can’t be guaranteed they’ll happen quickly enough to be allowable on the main thread (data access speeds are so variable on Android, IO disk resource contention might slow it down etc…).&lt;/p&gt;
+
+&lt;p&gt;Whether making remote network calls or reading/writing from local storage, we need to assume that it can take a few moments to complete and avoid using the main thread.&lt;/p&gt;
+
+&lt;h2 id=&quot;who-chooses-the-thread&quot;&gt;Who chooses the thread?&lt;/h2&gt;
+&lt;p&gt;If we consider the scenario where an &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;Activity&lt;/code&gt; talks to a &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;ViewModel&lt;/code&gt; which talks to a &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;Repository&lt;/code&gt; which talks to a &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;Room DAO&lt;/code&gt;, who is responsible for ensuring the data access happens off of the main thread?&lt;/p&gt;
+
+&lt;p&gt;Specifically at the Repository level, should the Repository internally handle the threading or should that be left up to the caller of the Repository to get it right?&lt;/p&gt;
+
+&lt;p&gt;Let’s say we have this Repository, which uses a &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;Room DAO&lt;/code&gt; to persist data.&lt;/p&gt;
+
+&lt;div class=&quot;language-kotlin highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;&lt;span class=&quot;kd&quot;&gt;class&lt;/span&gt; &lt;span class=&quot;nc&quot;&gt;BookmarksRepository&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;k&quot;&gt;private&lt;/span&gt; &lt;span class=&quot;kd&quot;&gt;val&lt;/span&gt; &lt;span class=&quot;py&quot;&gt;bookmarksDao&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;nc&quot;&gt;BookmarksDao&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;)&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;{&lt;/span&gt;
+    
+    &lt;span class=&quot;k&quot;&gt;fun&lt;/span&gt; &lt;span class=&quot;nf&quot;&gt;insert&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;bookmark&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;nc&quot;&gt;Bookmark&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;)&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;{&lt;/span&gt;
+        &lt;span class=&quot;n&quot;&gt;bookmarksDao&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;.&lt;/span&gt;&lt;span class=&quot;nf&quot;&gt;insert&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;bookmark&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;)&lt;/span&gt;
+    &lt;span class=&quot;p&quot;&gt;}&lt;/span&gt;
+    
+&lt;span class=&quot;p&quot;&gt;}&lt;/span&gt;
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;The &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;insert&lt;/code&gt; function in this example is not marked as &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;suspend&lt;/code&gt;. Should it be?&lt;/p&gt;
+
+&lt;h2 id=&quot;arguments-against-exposing-suspend-functions&quot;&gt;Arguments against exposing suspend functions&lt;/h2&gt;
+
+&lt;ul style=&quot;list-style-type:none;padding-left:20px&quot;&gt;
+    &lt;li&gt; ➖ Forces callers to use coroutines &lt;/li&gt;
+    &lt;li&gt; ➖ Calling code should own threading decisions &lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;h3 id=&quot;forces-callers-to-use-coroutines&quot;&gt;Forces callers to use coroutines&lt;/h3&gt;
+&lt;p&gt;An argument against exposing &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;suspend&lt;/code&gt; functions from the Repository is that it forces all callers to be coroutine-aware.&lt;/p&gt;
+&lt;ul&gt;
+  &lt;li&gt;The only way to call a &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;suspend&lt;/code&gt; function is from inside a coroutine&lt;/li&gt;
+  &lt;li&gt;Therefore, you create demands on all calling code that it also handle coroutines to some degree&lt;/li&gt;
+  &lt;li&gt;This dependency on coroutines &lt;em&gt;leaks&lt;/em&gt; and propagates throughout your codebase&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;h3 id=&quot;calling-code-should-own-threading-decisions&quot;&gt;Calling code should own threading decisions&lt;/h3&gt;
+&lt;p&gt;Another argument is that the calling code can (and should) make decisions about the threading&lt;/p&gt;
+&lt;ul&gt;
+  &lt;li&gt;Each caller might have particular needs, and can make the decision on threading based on its own known needs&lt;/li&gt;
+  &lt;li&gt;The Repository functions can be thread-agnostic and solely execute the logic on the thread it was invoked from, without trying to also handle threading&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;h2 id=&quot;arguments-for-exposing-suspend-functions&quot;&gt;Arguments for exposing suspend functions&lt;/h2&gt;
+&lt;ul style=&quot;list-style-type:none;padding-left:20px&quot;&gt;
+    &lt;li&gt; ➕ The best decisions on threading requires knowledge of internal workings &lt;/li&gt;
+    &lt;li&gt; ➕ Forces correctness on calling code &lt;/li&gt;
+    &lt;li&gt; ➕ You are forced to think &lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;h3 id=&quot;the-best-decisions-on-threading-requires-knowledge-of-internal-workings&quot;&gt;The best decisions on threading requires knowledge of internal workings&lt;/h3&gt;
+&lt;p&gt;The caller can’t always make the best threading decisions without knowing the internal workings of the Repository (which we want to avoid).&lt;/p&gt;
+
+&lt;p&gt;For example, it might seem reasonable for the calling code to always ensure it executes the Repository function on a background thread (e.g, &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;Dispatchers.IO&lt;/code&gt;), but that might create inefficiency. If using &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;Room&lt;/code&gt; for example, it is wasteful to switch dispatcher at a higher level because &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;Room&lt;/code&gt; handles this internally.&lt;/p&gt;
+&lt;blockquote&gt;
+  &lt;p&gt;&lt;em&gt;your code should not use &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;withContext(Dispatchers.IO)&lt;/code&gt; to call suspending room queries. It will complicate the code and make your queries run slower.&lt;/em&gt; (&lt;a href=&quot;https://medium.com/androiddevelopers/coroutines-on-android-part-iii-real-work-2ba8a2ec2f45&quot;&gt;Source&lt;/a&gt;)&lt;/p&gt;
+&lt;/blockquote&gt;
+
+&lt;p&gt;In other cases, you might need to perform some complex operations after retrieving the data from the data source, but before returning it from the Repository.&lt;/p&gt;
+&lt;ul&gt;
+  &lt;li&gt;Ideally, you’d perform the data retrieval on a dispatcher made for IO (e.g., &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;Dispatchers.IO&lt;/code&gt;) and then jump to a dispatcher made for more CPU-intensive operations (e.g., &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;Dispatchers.Default&lt;/code&gt;).&lt;/li&gt;
+  &lt;li&gt;If you are relying on the caller to dictate the threading model, this is very hard for a caller to get right without knowing far too much about the inner workings of the Repository.&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;h3 id=&quot;forces-correctness-on-calling-code&quot;&gt;Forces correctness on calling code&lt;/h3&gt;
+&lt;p&gt;Another argument for exposing &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;suspend&lt;/code&gt; functions is that it’s hard for callers to get threading right by themselves and the use of &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;suspend&lt;/code&gt; can force correctness upon them.&lt;/p&gt;
+
+&lt;p&gt;Use of &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;suspend&lt;/code&gt; alone could still allow a caller to call it from a coroutine executing on the main thread (e.g., &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;Dispatchers.Main&lt;/code&gt;). So how does the &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;suspend&lt;/code&gt; function offer a way to reduce errors here?&lt;/p&gt;
+
+&lt;ul&gt;
+  &lt;li&gt;Internally, inside the &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;suspend&lt;/code&gt; function in the Repository, you can ensure the heavier operations happen on the correct dispatcher.&lt;/li&gt;
+  &lt;li&gt;You can use &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;withContext()&lt;/code&gt; and provide &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;Dispatchers.IO&lt;/code&gt;, &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;Dispatchers.Default&lt;/code&gt; as well as your own custom dispatchers; ensuring each is used at the correct times&lt;/li&gt;
+  &lt;li&gt;You can make all your Repository functions main-safe; safe to call from the main thread without the caller needing to know precisely what’s happening internally.*&lt;/li&gt;
+  &lt;li&gt;The calling code can’t get it wrong&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;h4 id=&quot;main-safety&quot;&gt;*Main-safety&lt;/h4&gt;
+&lt;p&gt;The ability to call Repository functions in a main-safe way isn’t enforced by the compiler; you as developer of the Repository still have to do that. It’s trivial to do with &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;withContext&lt;/code&gt;, but you still have to do it. But it’s easier to get that right once when writing the Repository function than having to get it right from every caller that calls it in the future.&lt;/p&gt;
+
+&lt;p&gt;&lt;em&gt;Interestingly, Google go so far as to state that all suspend functions should be main-safe, but that’s a different debate for a different day. 😅&lt;/em&gt;&lt;/p&gt;
+
+&lt;blockquote&gt;
+  &lt;p&gt;Suspend functions should be main-safe, meaning they’re safe to call from the main thread. If a class is doing long-running blocking operations in a coroutine, it’s in charge of moving the execution off the main thread using withContext. This applies to all classes in your app, regardless of the part of the architecture the class is in.&lt;/p&gt;
+&lt;/blockquote&gt;
+
+&lt;h3 id=&quot;you-are-made-to-think&quot;&gt;You are made to think&lt;/h3&gt;
+&lt;p&gt;An immediate effect of trying to call a &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;suspend&lt;/code&gt; function is that you get a big hint the function might not complete quickly, and that this requires you to think.&lt;/p&gt;
+&lt;ul&gt;
+  &lt;li&gt;If calling a function not marked with &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;suspend&lt;/code&gt;, without anything to enforce otherwise, it’s easy to end up assuming a call will be fast and making it from the UI thread&lt;/li&gt;
+  &lt;li&gt;&lt;em&gt;Don’t make me think… unless I’m about to use a &lt;a href=&quot;https://en.wiktionary.org/wiki/footgun&quot;&gt;footgun&lt;/a&gt;&lt;/em&gt;.&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;h2 id=&quot;dont-keep-me-in-suspense-whats-the-recommendation&quot;&gt;Don’t keep me in suspense; what’s the recommendation?&lt;/h2&gt;
+&lt;p&gt;While I get the sentiments behind some counter-arguments, my recommendation &lt;strong&gt;is to&lt;/strong&gt; expose &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;suspend&lt;/code&gt; functions from the Repository layer.&lt;/p&gt;
+
+&lt;p&gt;It is also a recommended practice by Google, in their &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;Coroutines Best Practices&lt;/code&gt; guide: &lt;a href=&quot;https://developer.android.com/kotlin/coroutines/coroutines-best-practices&quot;&gt;https://developer.android.com/kotlin/coroutines/coroutines-best-practices&lt;/a&gt;&lt;/p&gt;</content><author><name>Craig Russell</name></author><category term="Android" /><summary type="html">Should Repositories expose suspend functions? When using coroutines in Android, you have to choose which functions will be marked as suspend. How and where you do this across your app is an architectural decision. This post discusses whether the Repository layer should expose suspend functions or not.</summary></entry><entry><title type="html">Comparing StandardTestDispatcher and UnconfinedTestDispatcher</title><link href="https://cdrussell.github.io//2022/01/19/comparing-standardtestdispatcher-and-unconfinedtestdispatcher" rel="alternate" type="text/html" title="Comparing StandardTestDispatcher and UnconfinedTestDispatcher" /><published>2022-01-19T16:19:00+00:00</published><updated>2022-01-19T16:19:00+00:00</updated><id>https://cdrussell.github.io//2022/01/19/comparing-standardtestdispatcher-and-unconfinedtestdispatcher</id><content type="html" xml:base="https://cdrussell.github.io//2022/01/19/comparing-standardtestdispatcher-and-unconfinedtestdispatcher">&lt;h1 id=&quot;standardtestdispatcher-vs-unconfinedtestdispatcher&quot;&gt;StandardTestDispatcher vs UnconfinedTestDispatcher&lt;/h1&gt;
+&lt;p&gt;&lt;em&gt;This articles describes the provided coroutine test dispatchers, standard and unconfined, the difference between them, and when to use each&lt;/em&gt;&lt;/p&gt;
+
+&lt;h2 id=&quot;some-background&quot;&gt;Some background&lt;/h2&gt;
+
+&lt;h3 id=&quot;what-is-a-coroutine-dispatcher&quot;&gt;What is a coroutine dispatcher?&lt;/h3&gt;
+&lt;p&gt;A &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;coroutine dispatcher&lt;/code&gt; determines which thread (or thread pool) should be used for running the coroutine. You are likely familiar with standard dispatchers, such as &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;Dispatchers.IO&lt;/code&gt; and &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;Dispatchers.Default&lt;/code&gt; (and &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;Dispatchers.Main&lt;/code&gt; if working in Android). When using these, we can ensure that a coroutine is performed on the correct type of thread (e.g., threads meant for heavy CPU work, or IO work, or main thread etc…)&lt;/p&gt;
+
+&lt;blockquote&gt;
+  &lt;p&gt;&lt;strong&gt;Coroutine Dispatchers&lt;/strong&gt; determine what thread or threads the corresponding coroutine uses for its execution. The coroutine dispatcher can confine coroutine execution to a specific thread, dispatch it to a thread pool, or let it run unconfined.&lt;/p&gt;
+  &lt;ul&gt;
+    &lt;li&gt;Source: &lt;a href=&quot;https://kotlinlang.org/docs/coroutine-context-and-dispatchers.html#dispatchers-and-threads&quot;&gt;kotlinlang&lt;/a&gt;&lt;/li&gt;
+  &lt;/ul&gt;
+&lt;/blockquote&gt;
+
+&lt;div class=&quot;language-kotlin highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;&lt;span class=&quot;nf&quot;&gt;launch&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;nc&quot;&gt;Dispatchers&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;.&lt;/span&gt;&lt;span class=&quot;nc&quot;&gt;Default&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;)&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;{&lt;/span&gt; 
+    &lt;span class=&quot;c1&quot;&gt;// do work that might be computationally expensive for the CPU&lt;/span&gt;
+    &lt;span class=&quot;c1&quot;&gt;// uses a thread pool&lt;/span&gt;
+    &lt;span class=&quot;c1&quot;&gt;//   - typically sized to have one thread for every CPU core the device has&lt;/span&gt;
+    &lt;span class=&quot;c1&quot;&gt;//   - minimum of 2 threads&lt;/span&gt;
+&lt;span class=&quot;p&quot;&gt;}&lt;/span&gt;
+
+&lt;span class=&quot;nf&quot;&gt;launch&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;nc&quot;&gt;Dispatchers&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;.&lt;/span&gt;&lt;span class=&quot;nc&quot;&gt;IO&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;)&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;{&lt;/span&gt;
+    &lt;span class=&quot;c1&quot;&gt;// do IO work, like reading from disk or sending data over the network&lt;/span&gt;
+    &lt;span class=&quot;c1&quot;&gt;// uses a thread pool&lt;/span&gt;
+    &lt;span class=&quot;c1&quot;&gt;//   - the number of threads can grow and shrink on demand up to a pre-configured max size&lt;/span&gt;
+    &lt;span class=&quot;c1&quot;&gt;//   - default max thread pool is 64&lt;/span&gt;
+&lt;span class=&quot;p&quot;&gt;}&lt;/span&gt;
+
+&lt;span class=&quot;nf&quot;&gt;launch&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;nc&quot;&gt;Dispatchers&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;.&lt;/span&gt;&lt;span class=&quot;nc&quot;&gt;Main&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;)&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;{&lt;/span&gt;
+    &lt;span class=&quot;c1&quot;&gt;// runs on the Android main thread. e.g., used for when interacting with Views&lt;/span&gt;
+&lt;span class=&quot;p&quot;&gt;}&lt;/span&gt;
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;h3 id=&quot;whats-the-relevance-of-coroutine-dispatchers-when-unit-testing&quot;&gt;What’s the relevance of coroutine dispatchers when unit testing?&lt;/h3&gt;
+&lt;p&gt;When writing unit tests, it is recommended to use a &lt;a href=&quot;https://kotlin.github.io/kotlinx.coroutines/kotlinx-coroutines-test/kotlinx.coroutines.test/-test-dispatcher/index.html&quot;&gt;&lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;TestDispatcher&lt;/code&gt;&lt;/a&gt; instead of a real coroutine dispatcher.&lt;/p&gt;
+
+&lt;p&gt;Doing so allows you to have more control over how and when coroutines are launched in your classes under test, and can therefore result in more deterministic and reliable tests. You can control time, like skipping calls to &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;delay&lt;/code&gt; to make tests run faster than they otherwise would, or advancing virtual time forward by a certain amount and asserting on the state of your coroutines at that moment.&lt;/p&gt;
+
+&lt;p&gt;In order to dispatch coroutines using a test dispatcher, you should &lt;a href=&quot;https://craigrussell.io/2021/12/testing-android-coroutines-using-runtest/#injecting-coroutine-dispatchers&quot;&gt;inject coroutine dispatchers&lt;/a&gt;.&lt;/p&gt;
+
+&lt;h2 id=&quot;which-test-dispatcher-to-use&quot;&gt;Which test dispatcher to use?&lt;/h2&gt;
+&lt;p&gt;If you’ve read the above, you now know:&lt;/p&gt;
+&lt;ol&gt;
+  &lt;li&gt;why a test dispatcher is useful&lt;/li&gt;
+  &lt;li&gt;how to inject one into your class under test&lt;/li&gt;
+&lt;/ol&gt;
+
+&lt;p&gt;What remains now is deciding which of the two available test dispatchers to use. Let’s see what the options are:&lt;/p&gt;
+&lt;ul&gt;
+  &lt;li&gt;&lt;a href=&quot;https://kotlin.github.io/kotlinx.coroutines/kotlinx-coroutines-test/kotlinx.coroutines.test/-standard-test-dispatcher.html&quot;&gt;StandardTestDispatcher&lt;/a&gt;&lt;/li&gt;
+  &lt;li&gt;&lt;a href=&quot;https://kotlin.github.io/kotlinx.coroutines/kotlinx-coroutines-test/kotlinx.coroutines.test/-unconfined-test-dispatcher.html&quot;&gt;UnconfinedTestDispatcher&lt;/a&gt;&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;h3 id=&quot;standardtestdispatcher&quot;&gt;StandardTestDispatcher&lt;/h3&gt;
+&lt;p&gt;A standard test dispatcher &lt;strong&gt;does not execute any tasks&lt;/strong&gt; automatically. When coroutines are launched with this dispatcher, instead of executing immediately they are left in a pending state.&lt;/p&gt;
+
+&lt;p&gt;This gives you full control over what is executed and when, so that you use that fine control to assert your code is working as expected.&lt;/p&gt;
+
+&lt;h4 id=&quot;if-coroutines-dont-automatically-run-when-using-standardtestdispatcher-how-do-you-make-them-run&quot;&gt;If coroutines don’t automatically run when using StandardTestDispatcher, how do you make them run?&lt;/h4&gt;
+&lt;p&gt;You can access the &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;TestCoroutineScheduler&lt;/code&gt; linked to the &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;StandardTestDispatcher&lt;/code&gt; which provides methods for controlling the execution state of pending tasks. The following functions can be called directly from inside your &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;runTest&lt;/code&gt; block.&lt;/p&gt;
+
+&lt;p&gt;&lt;a href=&quot;https://kotlin.github.io/kotlinx.coroutines/kotlinx-coroutines-test/kotlinx.coroutines.test/-test-coroutine-scheduler/run-current.html&quot;&gt;&lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;runCurrent()&lt;/code&gt;&lt;/a&gt;&lt;/p&gt;
+&lt;ul&gt;
+  &lt;li&gt;&lt;em&gt;runs the pending tasks that have been scheduled until current virtual time&lt;/em&gt;&lt;/li&gt;
+  &lt;li&gt;&lt;em&gt;execution order of your coroutines is guaranteed&lt;/em&gt;&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;&lt;a href=&quot;https://kotlin.github.io/kotlinx.coroutines/kotlinx-coroutines-test/kotlinx.coroutines.test/-test-coroutine-scheduler/advance-until-idle.html&quot;&gt;&lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;advanceUntilIdle()&lt;/code&gt;&lt;/a&gt;&lt;/p&gt;
+&lt;ul&gt;
+  &lt;li&gt;&lt;em&gt;runs all pending tasks&lt;/em&gt;&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;&lt;a href=&quot;https://kotlin.github.io/kotlinx.coroutines/kotlinx-coroutines-test/kotlinx.coroutines.test/-test-coroutine-scheduler/advance-time-by.html&quot;&gt;&lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;advanceTimeBy(ms)&lt;/code&gt;&lt;/a&gt;&lt;/p&gt;
+&lt;ul&gt;
+  &lt;li&gt;&lt;em&gt;advances virtual time by given number of milliseconds, executing any pending coroutines that are now scheduled to run&lt;/em&gt;&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;h3 id=&quot;unconfinedtestdispatcher&quot;&gt;UnconfinedTestDispatcher&lt;/h3&gt;
+&lt;p&gt;An unconfined test dispatcher offers &lt;strong&gt;no guarantees on the order&lt;/strong&gt; in which coroutines will be launched.&lt;/p&gt;
+
+&lt;p&gt;In return for giving up this control, however, you are &lt;strong&gt;not&lt;/strong&gt; required to manually call &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;runCurrent()&lt;/code&gt; and &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;advanceUntilIdle()&lt;/code&gt; in your tests as &lt;strong&gt;coroutines are eagerly launched&lt;/strong&gt; with this dispatcher.&lt;/p&gt;
+
+&lt;blockquote&gt;
+  &lt;p&gt;Using this TestDispatcher can greatly simplify writing tests where it’s not important which thread is used when and in which order the queued coroutines are executed. Another typical use case for this dispatcher is launching child coroutines that are resumed immediately, without going through a dispatch; this can be helpful for testing Channel and StateFlow usages. (&lt;a href=&quot;https://kotlin.github.io/kotlinx.coroutines/kotlinx-coroutines-test/kotlinx.coroutines.test/-unconfined-test-dispatcher.html&quot;&gt;Source&lt;/a&gt;)&lt;/p&gt;
+&lt;/blockquote&gt;
+
+&lt;h2 id=&quot;comparing-standard-and-unconfined-test-dispatchers&quot;&gt;Comparing standard and unconfined test dispatchers&lt;/h2&gt;
+
+&lt;table&gt;
+  &lt;thead&gt;
+    &lt;tr&gt;
+      &lt;th&gt;&lt;strong&gt;Test Dispatcher Type&lt;/strong&gt;&lt;/th&gt;
+      &lt;th style=&quot;text-align: center&quot;&gt;&lt;strong&gt;Full control over execution order&lt;/strong&gt;&lt;/th&gt;
+      &lt;th style=&quot;text-align: center&quot;&gt;&lt;strong&gt;Coroutines Run Automatically&lt;/strong&gt;&lt;/th&gt;
+    &lt;/tr&gt;
+  &lt;/thead&gt;
+  &lt;tbody&gt;
+    &lt;tr&gt;
+      &lt;td&gt;Standard&lt;/td&gt;
+      &lt;td style=&quot;text-align: center&quot;&gt;✅&lt;/td&gt;
+      &lt;td style=&quot;text-align: center&quot;&gt;❌&lt;/td&gt;
+    &lt;/tr&gt;
+    &lt;tr&gt;
+      &lt;td&gt;Unconfined&lt;/td&gt;
+      &lt;td style=&quot;text-align: center&quot;&gt;❌&lt;/td&gt;
+      &lt;td style=&quot;text-align: center&quot;&gt;✅&lt;/td&gt;
+    &lt;/tr&gt;
+  &lt;/tbody&gt;
+&lt;/table&gt;
+
+&lt;ul&gt;
+  &lt;li&gt;If you care about testing the order of coroutine execution, use a &lt;strong&gt;Standard&lt;/strong&gt; test dispatcher&lt;/li&gt;
+  &lt;li&gt;If you have particularly tricky coroutine code, where you need fine control over what is launched and when, use a &lt;strong&gt;Standard&lt;/strong&gt; test dispatcher&lt;/li&gt;
+  &lt;li&gt;Otherwise, give &lt;strong&gt;Unconfined&lt;/strong&gt; test dispatcher a go as it can simplify every test you write and make them more concise&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;h1 id=&quot;links&quot;&gt;Links&lt;/h1&gt;
+&lt;ul&gt;
+  &lt;li&gt;&lt;a href=&quot;https://craigrussell.io/2021/12/testing-android-coroutines-using-runtest/&quot;&gt;Testing Android Coroutines using runTest&lt;/a&gt;&lt;/li&gt;
+  &lt;li&gt;&lt;a href=&quot;https://github.com/Kotlin/kotlinx.coroutines/blob/master/kotlinx-coroutines-test/README.md&quot;&gt;Official docs&lt;/a&gt;&lt;/li&gt;
+  &lt;li&gt;&lt;a href=&quot;https://kotlin.github.io/kotlinx.coroutines/kotlinx-coroutines-test/kotlinx.coroutines.test/-standard-test-dispatcher.html&quot;&gt;StandardTestDispatcher&lt;/a&gt;&lt;/li&gt;
+  &lt;li&gt;&lt;a href=&quot;https://kotlin.github.io/kotlinx.coroutines/kotlinx-coroutines-test/kotlinx.coroutines.test/-unconfined-test-dispatcher.html&quot;&gt;UnconfinedTestDipatcher&lt;/a&gt;&lt;/li&gt;
+&lt;/ul&gt;</content><author><name>Craig Russell</name></author><category term="Android" /><summary type="html">StandardTestDispatcher vs UnconfinedTestDispatcher This articles describes the provided coroutine test dispatchers, standard and unconfined, the difference between them, and when to use each</summary></entry><entry><title type="html">Creating Markdown Links</title><link href="https://cdrussell.github.io//2022/01/18/creating-markdown-links" rel="alternate" type="text/html" title="Creating Markdown Links" /><published>2022-01-18T23:11:00+00:00</published><updated>2022-01-18T23:11:00+00:00</updated><id>https://cdrussell.github.io//2022/01/18/creating-markdown-links</id><content type="html" xml:base="https://cdrussell.github.io//2022/01/18/creating-markdown-links">&lt;h1 id=&quot;creating-markdown-links&quot;&gt;Creating Markdown Links&lt;/h1&gt;
+&lt;p&gt;&lt;em&gt;There are two types of links you can create in Markdown:&lt;/em&gt;&lt;/p&gt;
+&lt;ul&gt;
+  &lt;li&gt;&lt;em&gt;those which display just the URL. e.g., &lt;a href=&quot;https://craigrussell.io&quot;&gt;https://craigrussell.io&lt;/a&gt;&lt;/em&gt;&lt;/li&gt;
+  &lt;li&gt;&lt;em&gt;those which display custom text. e.g., &lt;a href=&quot;https://craigrussell.io&quot;&gt;My Blog&lt;/a&gt;&lt;/em&gt;&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;&lt;em&gt;This post details how to use both types.&lt;/em&gt;&lt;/p&gt;
+
+&lt;h2 id=&quot;creating-a-markdown-link-with-custom-text&quot;&gt;Creating a Markdown Link with Custom Text&lt;/h2&gt;
+&lt;p&gt;The standard syntax for creating links in markdown is providing text to display in square brackets &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;[ ]&lt;/code&gt;, followed by the URL in parentheses &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;( )&lt;/code&gt;. For example, to link to this blog, I could do this:&lt;/p&gt;
+
+&lt;p&gt;&lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;[My Blog](https://craigrussell.io)&lt;/code&gt;, which renders as &lt;a href=&quot;https://craigrussell.io&quot;&gt;My Blog&lt;/a&gt;&lt;/p&gt;
+
+&lt;h3 id=&quot;-tips&quot;&gt;💡 Tips&lt;/h3&gt;
+&lt;ul&gt;
+  &lt;li&gt;It is important there are no spaces between &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;[ ]&lt;/code&gt; and &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;( )&lt;/code&gt;&lt;/li&gt;
+  &lt;li&gt;It is important the &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;[ ]&lt;/code&gt; appears before the &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;( )&lt;/code&gt;&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;h2 id=&quot;creating-a-markdown-link-which-just-shows-the-url&quot;&gt;Creating a Markdown Link which just shows the URL&lt;/h2&gt;
+&lt;p&gt;Instead of adding display text for the link you can have it displayed as just the URL, and there are 2 ways to do this.&lt;/p&gt;
+
+&lt;h3 id=&quot;option-1-repeating-url-as-the-title-&quot;&gt;Option 1: repeating URL as the title ❌&lt;/h3&gt;
+&lt;p&gt;One way to create a link with no title is to duplicate the URL into both parts of the link: e.g.,&lt;/p&gt;
+
+&lt;p&gt;&lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;[https://craigrussell.io](https://craigrussell.io)&lt;/code&gt;, which renders as &lt;a href=&quot;https://craigrussell.io&quot;&gt;https://craigrussell.io&lt;/a&gt;.&lt;/p&gt;
+
+&lt;ul style=&quot;list-style-type:none;padding-left:20px&quot;&gt;
+    &lt;li&gt; ➕ You probably already know the syntax&lt;/li&gt;
+    &lt;li&gt; ➖ It's annoying to provide the same URL twice&lt;/li&gt;
+    &lt;li&gt; ➖ It is error-prone if you update one part and forget to update the other&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;h3 id=&quot;option-2-using-angle-brackets-&quot;&gt;Option 2: using angle brackets ✅&lt;/h3&gt;
+&lt;p&gt;The best way to create a link which just shows the URL and no custom display text is to wrap it inside angle brackets &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;&amp;lt; &amp;gt;&lt;/code&gt;.&lt;/p&gt;
+
+&lt;p&gt;&lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;&amp;lt;https://craigrussell.io&amp;gt;&lt;/code&gt;, which renders as &lt;a href=&quot;https://craigrussell.io&quot;&gt;https://craigrussell.io&lt;/a&gt;&lt;/p&gt;
+
+&lt;ul style=&quot;list-style-type:none;padding-left:20px&quot;&gt;
+    &lt;li&gt; ➕ Less typing required &lt;/li&gt;
+    &lt;li&gt; ➕ No chance for display text and URL to mismatch &lt;/li&gt;
+    &lt;li&gt; ➖ Need to remember the alternative syntax style &lt;/li&gt;
+&lt;/ul&gt;</content><author><name>Craig Russell</name></author><summary type="html">Creating Markdown Links There are two types of links you can create in Markdown: those which display just the URL. e.g., https://craigrussell.io those which display custom text. e.g., My Blog</summary></entry><entry><title type="html">Apple Shortcut Finder Integration</title><link href="https://cdrussell.github.io//2022/01/13/apple-shortcut-finder-integration" rel="alternate" type="text/html" title="Apple Shortcut Finder Integration" /><published>2022-01-13T12:27:00+00:00</published><updated>2022-01-13T12:27:00+00:00</updated><id>https://cdrussell.github.io//2022/01/13/apple-shortcut-finder-integration</id><content type="html" xml:base="https://cdrussell.github.io//2022/01/13/apple-shortcut-finder-integration">&lt;h1 id=&quot;streamlining-adding-images-to-blog&quot;&gt;Streamlining adding images to blog&lt;/h1&gt;
+&lt;p&gt;All images that will be included in my blog posts live in the same directory, &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;Images&lt;/code&gt;, which is a subfolder of my root blog project repo. Once I have an image I want to include in a blog post, I noticed it being a point of friction to copy it to the correct directory and to add the desired image markup to reference it.&lt;/p&gt;
+
+&lt;p&gt;&lt;img src=&quot;/images/blogging-images-directory.png&quot; alt=&quot;File structure showing location of images directory within blog project&quot; width=&quot;500&quot; style=&quot;display: block; margin-left: auto; margin-right: auto;&quot; /&gt;&lt;/p&gt;
+
+&lt;h2 id=&quot;too-many-manual-steps&quot;&gt;Too Many Manual Steps&lt;/h2&gt;
+&lt;p&gt;The manual steps were the same each time. From the point of having found the image I want to include in Finder:&lt;/p&gt;
+&lt;ol&gt;
+  &lt;li&gt;Choose to copy the image&lt;/li&gt;
+  &lt;li&gt;Open the &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;Images&lt;/code&gt; subdirectory&lt;/li&gt;
+  &lt;li&gt;Paste the image&lt;/li&gt;
+  &lt;li&gt;In the blog post, add an image tag (remembering the correct syntax somehow)&lt;/li&gt;
+  &lt;li&gt;Manually type out the full image name&lt;/li&gt;
+  &lt;li&gt;&lt;em&gt;(usually) forget the image name, and have to return to &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;Finder&lt;/code&gt; to check again&lt;/em&gt;&lt;/li&gt;
+&lt;/ol&gt;
+
+&lt;p&gt;Ripe for automation! 🍇&lt;/p&gt;
+
+&lt;h1 id=&quot;automating-with-apple-shortcuts&quot;&gt;Automating with Apple Shortcuts&lt;/h1&gt;
+&lt;p&gt;The steps automated by this shortcut are:&lt;/p&gt;
+&lt;ol&gt;
+  &lt;li&gt;Integrate with Finder to run the shortcut, passing the selected image file as an argument&lt;/li&gt;
+  &lt;li&gt;Copy the image to the target &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;Image&lt;/code&gt; subdirectory, required for the blog&lt;/li&gt;
+  &lt;li&gt;Copy the image name to the clipboard so it’s ready to paste into the article&lt;/li&gt;
+&lt;/ol&gt;
+
+&lt;h2 id=&quot;apple-shortcuts-can-integrate-with-finder&quot;&gt;Apple Shortcuts can integrate with Finder&lt;/h2&gt;
+&lt;p&gt;Apple Shortcuts can integrate with &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;Finder&lt;/code&gt; so that we can right-click on any image, and invoke our Shortcut, passing in that image as input to our script.&lt;/p&gt;
+
+&lt;p&gt;&lt;img src=&quot;/images/apple-shortcuts-integrate-with-quick-actions.png&quot; alt=&quot;&quot; width=&quot;500&quot; style=&quot;display: block; margin-left: auto; margin-right: auto;&quot; /&gt;&lt;/p&gt;
+
+&lt;p&gt;We can configure the shortcut to be available as a “Quick Action”, and configure the acceptable input types to only allow “Images”, as you can see in the screenshot above. For extra laziness, which is always good, you can add a keyboard shortcut.&lt;/p&gt;
+
+&lt;p&gt;&lt;img src=&quot;/images/apple-shortcuts-finder-menu-integration.png&quot; alt=&quot;Finder integration showing a menu action called 'Add image to blog'&quot; width=&quot;500&quot; style=&quot;display: block; margin-left: auto; margin-right: auto;&quot; /&gt;&lt;/p&gt;
+
+&lt;h2 id=&quot;copy-the-selected-image-to-the-blog-image-subdirectory&quot;&gt;Copy the selected image to the blog image subdirectory&lt;/h2&gt;
+
+&lt;p&gt;I dropped back to the command line to make copying the image easier.&lt;/p&gt;
+
+&lt;p&gt;&lt;img src=&quot;/images/apple-shortcuts-copying-file-using-command-line.png&quot; alt=&quot;apple script step using command line to copy the selected file to the desired blog image directory&quot; width=&quot;500&quot; style=&quot;display: block; margin-left: auto; margin-right: auto;&quot; /&gt;&lt;/p&gt;
+
+&lt;h2 id=&quot;copy-image-name-to-the-clipboard&quot;&gt;Copy image name to the clipboard&lt;/h2&gt;
+
+&lt;p&gt;With the image in the correct place, the last step is to reference the image using its filename. To streamline this, the image name is copied to the clipboard for easy pasting.&lt;/p&gt;
+
+&lt;p&gt;&lt;img src=&quot;/images/apple-shortcuts-copying-filename-clipboard.png&quot; alt=&quot;apple script steps to get the filename, plus file extension, and copy to clipboard&quot; width=&quot;500&quot; style=&quot;display: block; margin-left: auto; margin-right: auto;&quot; /&gt;&lt;/p&gt;
+
+&lt;h1 id=&quot;demo&quot;&gt;Demo&lt;/h1&gt;
+
+&lt;p&gt;&lt;img src=&quot;/images/apple-shortcut-full-flow-animation.gif&quot; alt=&quot;animation showing the full flow. Right click on an image file and choose the `Add image to blog` menu item. The image immediately shows in the correct image subdirectory. And the filename is immediately pasted into the blog post editor.&quot; width=&quot;500&quot; style=&quot;display: block; margin-left: auto; margin-right: auto;&quot; /&gt;&lt;/p&gt;
+
+&lt;h1 id=&quot;how-you-can-do-this-too&quot;&gt;How you can do this, too&lt;/h1&gt;
+&lt;p&gt;Shortcut available here: &lt;a href=&quot;/downloads/add-image-to-blog-post.shortcut&quot;&gt;add-image-to-blog-post.shortcut&lt;/a&gt; (on MacOS device). Open downloaded file, and import into &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;Apple Shortcuts&lt;/code&gt;&lt;/p&gt;</content><author><name>Craig Russell</name></author><category term="Productivity" /><summary type="html">Streamlining adding images to blog All images that will be included in my blog posts live in the same directory, Images, which is a subfolder of my root blog project repo. Once I have an image I want to include in a blog post, I noticed it being a point of friction to copy it to the correct directory and to add the desired image markup to reference it.</summary></entry><entry><title type="html">Getting the day of the week in an Apple Shortcut</title><link href="https://cdrussell.github.io//2022/01/10/getting-the-day-of-the-week-in-an-apple-shortcut" rel="alternate" type="text/html" title="Getting the day of the week in an Apple Shortcut" /><published>2022-01-10T07:53:00+00:00</published><updated>2022-01-10T07:53:00+00:00</updated><id>https://cdrussell.github.io//2022/01/10/getting-the-day-of-the-week-in-an-apple-shortcut</id><content type="html" xml:base="https://cdrussell.github.io//2022/01/10/getting-the-day-of-the-week-in-an-apple-shortcut">&lt;p&gt;&lt;em&gt;This post describes how you could structure your Shortcut to get the current day of the week, and how you’d do something different depending on which day it is.&lt;/em&gt;&lt;/p&gt;
+
+&lt;p&gt;Apple Shortcuts provides only basic built-in functionality for working with Dates. If you want to do something like treating weekdays differently from a weekend, or only performing an action on Tuesdays and Thursday, it isn’t obvious how you’d achieve this in Shortcuts.&lt;/p&gt;
+
+&lt;h2 id=&quot;nested-if-statements-&quot;&gt;Nested if-statements ❌&lt;/h2&gt;
+&lt;p&gt;Shortcuts doesn’t support &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;if-else if&lt;/code&gt; statements. At best, you could use an &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;if&lt;/code&gt;, and in the &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;else&lt;/code&gt; block nest another &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;if&lt;/code&gt;. Then in &lt;em&gt;its&lt;/em&gt; &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;else&lt;/code&gt; block, nest another &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;if&lt;/code&gt;… 🔁.&lt;/p&gt;
+
+&lt;div class=&quot;language-java highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;&lt;span class=&quot;nc&quot;&gt;If&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;day&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;is&lt;/span&gt; &lt;span class=&quot;nc&quot;&gt;Monday&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;{&lt;/span&gt;
+   &lt;span class=&quot;c1&quot;&gt;// do something&lt;/span&gt;
+&lt;span class=&quot;o&quot;&gt;}&lt;/span&gt;
+&lt;span class=&quot;k&quot;&gt;else&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;{&lt;/span&gt;
+  &lt;span class=&quot;k&quot;&gt;if&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;day&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;is&lt;/span&gt; &lt;span class=&quot;nc&quot;&gt;Tuesday&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;{&lt;/span&gt;
+    &lt;span class=&quot;c1&quot;&gt;// do something&lt;/span&gt;
+  &lt;span class=&quot;o&quot;&gt;}&lt;/span&gt;
+  &lt;span class=&quot;k&quot;&gt;else&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;{&lt;/span&gt;
+    &lt;span class=&quot;k&quot;&gt;if&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;day&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;is&lt;/span&gt; &lt;span class=&quot;nc&quot;&gt;Wednesday&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;{&lt;/span&gt;
+      &lt;span class=&quot;c1&quot;&gt;// do something&lt;/span&gt;
+    &lt;span class=&quot;o&quot;&gt;}&lt;/span&gt; 
+    &lt;span class=&quot;k&quot;&gt;else&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;{&lt;/span&gt;
+       &lt;span class=&quot;o&quot;&gt;..&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;and&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;so&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;on&lt;/span&gt;
+    &lt;span class=&quot;o&quot;&gt;}&lt;/span&gt;
+  &lt;span class=&quot;o&quot;&gt;}&lt;/span&gt;
+&lt;span class=&quot;o&quot;&gt;}&lt;/span&gt;
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+&lt;p&gt;&lt;em&gt;yuk&lt;/em&gt;.&lt;/p&gt;
+
+&lt;h2 id=&quot;using-a-dictionary-&quot;&gt;Using a dictionary ✅&lt;/h2&gt;
+
+&lt;p&gt;&lt;img src=&quot;/images/apple-shortcut-days-of-week-dictionary.png&quot; alt=&quot;dictionary where there are 7 keys, matching the names of the day of the week. values are empty for now as it is just to help describe generally how this helps&quot; width=&quot;500&quot; style=&quot;display: block; margin-left: auto; margin-right: auto;&quot; /&gt;&lt;/p&gt;
+
+&lt;p&gt;We can define a dictionary where the keys are the days of the week. The general idea is that we can parse the day of the week from the date as a string, and then use that string to lookup a value from the dictionary. In the example above, the values are empty, but we could add in a meaningful value like a string or a boolean (there’s an example of this at the end of the post).&lt;/p&gt;
+
+&lt;p&gt;⚠️ The format of the days matters here; we need to make sure that the names we use for a key match the correct custom date formatting.&lt;/p&gt;
+
+&lt;h2 id=&quot;date-formats&quot;&gt;Date formats&lt;/h2&gt;
+&lt;p&gt;We can use the &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;Get Dictionary Value&lt;/code&gt; action, and apply a custom date format which will return only the day of the week.&lt;/p&gt;
+
+&lt;p&gt;&lt;img src=&quot;/images/apple-shortcuts-custom-date-format-day-of-week.png&quot; alt=&quot;Apple Shortcut custom date formatting to return only name of day of the week&quot; width=&quot;500&quot; style=&quot;display: block; margin-left: auto; margin-right: auto;&quot; /&gt;&lt;/p&gt;
+
+&lt;p&gt;With a date format set to &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;custom&lt;/code&gt;, we can apply a format based on the &lt;a href=&quot;https://www.unicode.org/reports/tr35/tr35-31/tr35-dates.html#Date_Format_Patterns&quot;&gt;standard date formats&lt;/a&gt;. For our case, &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;EEEE&lt;/code&gt; which returns the full name of the day of the week:&lt;/p&gt;
+&lt;ul&gt;
+  &lt;li&gt;&lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;E&lt;/code&gt; meaning to return the day of the week&lt;/li&gt;
+  &lt;li&gt;That there are 4 &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;E&lt;/code&gt;s meaning to use the “full name” format&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;⚠️ You have to make sure the date format you use produces the exact same names as the keys you use in the dictionary. My set of keys works for me in English, but would need adjusted if running on a machine set to another locale. You could decide to use numerical days of the weeks instead, but I prefer the named days for my use case as it’s more readable.&lt;/p&gt;
+
+&lt;h1 id=&quot;example-detecting-if-it-is-a-weekend&quot;&gt;Example: Detecting If It Is a Weekend&lt;/h1&gt;
+
+&lt;p&gt;&lt;img src=&quot;/images/apple-shortcuts-is-it-a-weekend-example.png&quot; alt=&quot;Example of an Apple Shortcut script showing if it's a weekend or not&quot; width=&quot;500&quot; style=&quot;display: block; margin-left: auto; margin-right: auto;&quot; /&gt;&lt;/p&gt;</content><author><name>Craig Russell</name></author><category term="Productivity" /><summary type="html">This post describes how you could structure your Shortcut to get the current day of the week, and how you’d do something different depending on which day it is.</summary></entry><entry><title type="html">Easier git commands using git-number</title><link href="https://cdrussell.github.io//2022/01/07/easier-git-commands-using-git-number" rel="alternate" type="text/html" title="Easier git commands using git-number" /><published>2022-01-07T23:16:00+00:00</published><updated>2022-01-07T23:16:00+00:00</updated><id>https://cdrussell.github.io//2022/01/07/easier-git-commands-using-git-number</id><content type="html" xml:base="https://cdrussell.github.io//2022/01/07/easier-git-commands-using-git-number">&lt;p&gt;&lt;em&gt;This post describes &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;git-number&lt;/code&gt; which can be used to number each file listed in git commands for a quicker way to choose files.&lt;/em&gt;&lt;/p&gt;
+
+&lt;p&gt;If you work with git on the command line, you’ll be used to seeing the output of &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;git status&lt;/code&gt;. e.g.,&lt;/p&gt;
+
+&lt;div class=&quot;language-shell highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;cdrussell.github.io % git status                                                                                                    main &lt;span class=&quot;o&quot;&gt;(&lt;/span&gt;cdrussell.github.io&lt;span class=&quot;o&quot;&gt;)&lt;/span&gt;
+On branch main
+Your branch is ahead of &lt;span class=&quot;s1&quot;&gt;'origin/main'&lt;/span&gt; by 1 commit.
+  &lt;span class=&quot;o&quot;&gt;(&lt;/span&gt;use &lt;span class=&quot;s2&quot;&gt;&quot;git push&quot;&lt;/span&gt; to publish your &lt;span class=&quot;nb&quot;&gt;local &lt;/span&gt;commits&lt;span class=&quot;o&quot;&gt;)&lt;/span&gt;
+
+Changes not staged &lt;span class=&quot;k&quot;&gt;for &lt;/span&gt;commit:
+  &lt;span class=&quot;o&quot;&gt;(&lt;/span&gt;use &lt;span class=&quot;s2&quot;&gt;&quot;git add &amp;lt;file&amp;gt;...&quot;&lt;/span&gt; to update what will be committed&lt;span class=&quot;o&quot;&gt;)&lt;/span&gt;
+  &lt;span class=&quot;o&quot;&gt;(&lt;/span&gt;use &lt;span class=&quot;s2&quot;&gt;&quot;git restore &amp;lt;file&amp;gt;...&quot;&lt;/span&gt; to discard changes &lt;span class=&quot;k&quot;&gt;in &lt;/span&gt;working directory&lt;span class=&quot;o&quot;&gt;)&lt;/span&gt;
+        modified:   _posts/2016-08-10-SSH-Keys-with-Multiple-GitHub-Accounts-c67db56f191e.md
+        modified:   _posts/2018-03-21-Recycler View and ListAdapter, More Animations and Less Code.md
+        modified:   _posts/2022-01-07-easier-git-commands-using-git-number.md
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;If you want to add these files you need to run &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;git add&lt;/code&gt;, and for each you have to provide the filename. Sometimes you can regex to make this easier, and sometimes you might be adding everything, but other times you need to choose individual files and it’s a pain to have to provide this full name each time. e.g.,&lt;/p&gt;
+
+&lt;div class=&quot;language-shell highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;git add _posts/2016-08-10-SSH-Keys-with-Multiple-GitHub-Accounts-c67db56f191e.md  
+git add _posts/2018-03-21-Recycler View and ListAdapter, More Animations and Less Code.md
+git add _posts/2022-01-07-easier-git-commands-using-git-number.md
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;&lt;em&gt;Tedious&lt;/em&gt;. Enter &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;git-number&lt;/code&gt;.&lt;/p&gt;
+
+&lt;h2 id=&quot;what-git-number-does&quot;&gt;What git-number does&lt;/h2&gt;
+&lt;p&gt;&lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;git-number&lt;/code&gt; will number each file and allow you to use just that number in future git commands instead of having to type out the full filename.&lt;/p&gt;
+
+&lt;p&gt;Let’s run &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;git-number status&lt;/code&gt;.&lt;/p&gt;
+
+&lt;div class=&quot;language-shell highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;cdrussell.github.io % git-number                                                                                                            main &lt;span class=&quot;o&quot;&gt;(&lt;/span&gt;cdrussell.github.io&lt;span class=&quot;o&quot;&gt;)&lt;/span&gt;
+On branch main
+Your branch is ahead of &lt;span class=&quot;s1&quot;&gt;'origin/main'&lt;/span&gt; by 1 commit.
+  &lt;span class=&quot;o&quot;&gt;(&lt;/span&gt;use &lt;span class=&quot;s2&quot;&gt;&quot;git push&quot;&lt;/span&gt; to publish your &lt;span class=&quot;nb&quot;&gt;local &lt;/span&gt;commits&lt;span class=&quot;o&quot;&gt;)&lt;/span&gt;
+
+Changes not staged &lt;span class=&quot;k&quot;&gt;for &lt;/span&gt;commit:
+  &lt;span class=&quot;o&quot;&gt;(&lt;/span&gt;use &lt;span class=&quot;s2&quot;&gt;&quot;git add &amp;lt;file&amp;gt;...&quot;&lt;/span&gt; to update what will be committed&lt;span class=&quot;o&quot;&gt;)&lt;/span&gt;
+  &lt;span class=&quot;o&quot;&gt;(&lt;/span&gt;use &lt;span class=&quot;s2&quot;&gt;&quot;git restore &amp;lt;file&amp;gt;...&quot;&lt;/span&gt; to discard changes &lt;span class=&quot;k&quot;&gt;in &lt;/span&gt;working directory&lt;span class=&quot;o&quot;&gt;)&lt;/span&gt;
+1       modified:   _posts/2016-08-10-SSH-Keys-with-Multiple-GitHub-Accounts-c67db56f191e.md
+2       modified:   _posts/2018-03-21-Recycler View and ListAdapter, More Animations and Less Code.md
+3       modified:   _posts/2022-01-07-easier-git-commands-using-git-number.md
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;It’s a subtle difference, but you’ll see each file is numbered on the left-hand side.&lt;/p&gt;
+
+&lt;p&gt;To add the files now, we can provide the number instead of the full filename. e.g.,&lt;/p&gt;
+
+&lt;div class=&quot;language-shell highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;git-number add 1
+git add _posts/2016-08-10-SSH-Keys-with-Multiple-GitHub-Accounts-c67db56f191e.md 
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;☝️ Both of these commands do the same thing. Which would you rather type? You can also alias &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;git-number&lt;/code&gt; to something quicker to type.&lt;/p&gt;
+
+&lt;h2 id=&quot;installing-git-number&quot;&gt;Installing git-number&lt;/h2&gt;
+&lt;p&gt;&lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;brew install git-number&lt;/code&gt;&lt;/p&gt;
+
+&lt;h2 id=&quot;further-reading&quot;&gt;Further reading&lt;/h2&gt;
+&lt;ul&gt;
+  &lt;li&gt;See &lt;a href=&quot;https://github.com/holygeek/git-number&quot;&gt;Official GitHub page&lt;/a&gt; for more info.&lt;/li&gt;
+  &lt;li&gt;&lt;a href=&quot;https://jkl.gg/b/git-number/&quot;&gt;git-number to the command line rescue&lt;/a&gt; by &lt;a href=&quot;https://twitter.com/kaushikgopal&quot;&gt;Kaushik Gopal&lt;/a&gt;, which has more details and is where I discovered that this tool exists.&lt;/li&gt;
+&lt;/ul&gt;</content><author><name>Craig Russell</name></author><summary type="html">This post describes git-number which can be used to number each file listed in git commands for a quicker way to choose files.</summary></entry><entry><title type="html">Lightweight Journal Built on Apple Shortcuts</title><link href="https://cdrussell.github.io//2022/01/07/lightweight-journal-built-on-apple-shortcuts" rel="alternate" type="text/html" title="Lightweight Journal Built on Apple Shortcuts" /><published>2022-01-07T00:00:00+00:00</published><updated>2022-01-07T00:00:00+00:00</updated><id>https://cdrussell.github.io//2022/01/07/lightweight-journal-built-on-apple-shortcuts</id><content type="html" xml:base="https://cdrussell.github.io//2022/01/07/lightweight-journal-built-on-apple-shortcuts">&lt;p&gt;&lt;em&gt;This post details how to use &lt;strong&gt;Apple Shortcuts&lt;/strong&gt; to build a lightweight journal to log events, which are timestamped and saved to &lt;strong&gt;Apple Notes&lt;/strong&gt;.&lt;/em&gt;&lt;/p&gt;
+
+&lt;h1 id=&quot;apple-shortcuts&quot;&gt;Apple Shortcuts&lt;/h1&gt;
+&lt;p&gt;&lt;a href=&quot;https://support.apple.com/en-gb/guide/shortcuts/welcome/ios&quot;&gt;Apple Shortcuts&lt;/a&gt; provide a way to automate and extend the functionality of apps on Apple devices. It’s like programming, except you don’t need a compiler, an app store or to deploy a website. It’s powerful, incredibly useful and a great tool to have in your toolbox. 🛠️🧰&lt;/p&gt;
+
+&lt;p&gt;We can leverage an Apple Shortcut script which prompts the user for some details when it runs, and saves those details in a timestamped note in Apple Notes.&lt;/p&gt;
+
+&lt;h1 id=&quot;lightweight-journal&quot;&gt;Lightweight Journal&lt;/h1&gt;
+&lt;p&gt;I wanted to have a way to quickly log when events happen, that would automatically be grouped by date.&lt;/p&gt;
+
+&lt;p&gt;&lt;img src=&quot;/images/journalling-ios-shortcuts.gif&quot; alt=&quot;animation showing logging two life events for the current day&quot; height=&quot;500&quot; style=&quot; display: block; margin-left: auto; margin-right: auto; &quot; /&gt;&lt;/p&gt;
+
+&lt;h2 id=&quot;what-do-i-journal&quot;&gt;What do I journal?&lt;/h2&gt;
+&lt;p&gt;I use this same system for a few things:&lt;/p&gt;
+
+&lt;ul&gt;
+  &lt;li&gt;Logging important life events. e.g., births, weddings, buying a car, vaccinations etc..&lt;/li&gt;
+  &lt;li&gt;Logging hilariously cute things my young kids say&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;h2 id=&quot;creating-events-quickly&quot;&gt;Creating Events Quickly&lt;/h2&gt;
+&lt;p&gt;I’ve streamlined the process as much as I can for creating an event. It takes only two inputs and can be completed within a few seconds:&lt;/p&gt;
+&lt;ul&gt;
+  &lt;li&gt;text input to describe what happened&lt;/li&gt;
+  &lt;li&gt;the date the event happens (defaults to today)&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;h2 id=&quot;how-events-are-saved&quot;&gt;How Events are Saved&lt;/h2&gt;
+&lt;p&gt;Events are saved in &lt;strong&gt;Apple Notes&lt;/strong&gt;, in a folder called &lt;strong&gt;Journal&lt;/strong&gt;. As they are saved in Apple Notes, it makes them accessible and searchable across all of my devices.&lt;/p&gt;
+
+&lt;p&gt;I wanted to group events by date, so a new note is created for each day which had an event recorded. If there are multiple events for a day they will be appended to the same file.&lt;/p&gt;
+
+&lt;p&gt;&lt;img src=&quot;/images/apple-notes-journal.png&quot; alt=&quot;Apples Notes list view, showing journal entries where each entry is in ISO-8601 date format&quot; width=&quot;300&quot; style=&quot; display: block; margin-left: auto; margin-right: auto; &quot; /&gt;&lt;/p&gt;
+
+&lt;p&gt;&lt;img src=&quot;/images/journal-entry.png&quot; alt=&quot;Apples Notes note view for 6th January, showing multiple events separated by a dotted line break&quot; width=&quot;300&quot; style=&quot; display: block; margin-left: auto; margin-right: auto; &quot; /&gt;&lt;/p&gt;
+
+&lt;h2 id=&quot;apple-shortcuts-1&quot;&gt;Apple Shortcuts&lt;/h2&gt;
+
+&lt;p&gt;&lt;img src=&quot;/images/apple-shortcuts.png&quot; alt=&quot;screenshot of Apple Shortcut for logging a life event&quot; height=&quot;500&quot; style=&quot; display: block; margin-left: auto; margin-right: auto; &quot; /&gt;&lt;/p&gt;
+
+&lt;p&gt;The shortcut itself is a set of script events which ask the user for text describing what happened, then ask the user for the date the event happened. With these two inputs, it will then check if a note already exists for that day.&lt;/p&gt;
+&lt;ul&gt;
+  &lt;li&gt;If it already exists, the event details will be appended to the existing note&lt;/li&gt;
+  &lt;li&gt;If it doesn’t exist, it will be created with the event details&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;For a link to the full shortcut, see “How You Can Use This” below&lt;/p&gt;
+
+&lt;h1 id=&quot;how-you-can-use-this-too&quot;&gt;How you can use this, too&lt;/h1&gt;
+&lt;ol&gt;
+  &lt;li&gt;Open &lt;strong&gt;Apple Notes&lt;/strong&gt;, and create a folder for your journal. Let’s assume you call it “Journal”&lt;/li&gt;
+  &lt;li&gt;Download &lt;a href=&quot;/downloads/Journal.shortcut&quot;&gt;Journal.shortcut&lt;/a&gt; (on an iOS or MacOS device). Open downloaded file, and import into &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;Apple Shortcuts&lt;/code&gt;&lt;/li&gt;
+  &lt;li&gt;Launch &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;Apple Shortcuts&lt;/code&gt;, and open the new &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;Journal&lt;/code&gt; shortcut. You need to choose the Folder for your journal &lt;strong&gt;in 2 places&lt;/strong&gt;. (You need to do this even if you are already using the name “Journal”)&lt;/li&gt;
+&lt;/ol&gt;
+
+&lt;h2 id=&quot;if-importing-on-macos&quot;&gt;If importing on MacOS&lt;/h2&gt;
+&lt;p&gt;&lt;img src=&quot;/images/apple-shortcut-import-instructions-macos.png&quot; alt=&quot;Annotated MacOS screenshot of editing the new Apple Shortcut to choose destination folder in two places&quot; height=&quot;500&quot; style=&quot; display: block; margin-left: auto; margin-right: auto; &quot; /&gt;&lt;/p&gt;
+
+&lt;h2 id=&quot;if-importing-on-ios&quot;&gt;If importing on iOS&lt;/h2&gt;
+&lt;p&gt;&lt;img src=&quot;/images/apple-shortcut-import-instructions-ios.jpeg&quot; alt=&quot;Annotated iOS screenshot of editing the new Apple Shortcut to choose destination folder in two places&quot; height=&quot;500&quot; style=&quot; display: block; margin-left: auto; margin-right: auto; &quot; /&gt;&lt;/p&gt;
+
+&lt;h2 id=&quot;lightweight-journaling-built-on-apple-shortcuts-and-apple-notes&quot;&gt;Lightweight journaling built on Apple Shortcuts and Apple Notes&lt;/h2&gt;
+&lt;p&gt;If you’ve done it all correctly, whenever you run that shortcut you’ll be prompted for the event details, followed by the date. The created note will then be shown which is handy for adding further details, pasting in images etc…&lt;/p&gt;
+
+&lt;p&gt;💡 You can add the shortcut to your Home Screen for one-click triggering.&lt;/p&gt;
+
+&lt;p&gt;Go forth and journal ✍️&lt;/p&gt;</content><author><name>Craig Russell</name></author><summary type="html">This post details how to use Apple Shortcuts to build a lightweight journal to log events, which are timestamped and saved to Apple Notes.</summary></entry><entry><title type="html">Testing Android Coroutines using runTest</title><link href="https://cdrussell.github.io//2021/12/testing-android-coroutines-using-runtest/" rel="alternate" type="text/html" title="Testing Android Coroutines using runTest" /><published>2021-12-07T01:05:00+00:00</published><updated>2021-12-07T01:05:00+00:00</updated><id>https://cdrussell.github.io//2021/12/testing-android-coroutines-using-runtest</id><content type="html" xml:base="https://cdrussell.github.io//2021/12/testing-android-coroutines-using-runtest/">&lt;h1 id=&quot;testing-android-coroutines-using-runtest&quot;&gt;Testing Android Coroutines using runTest&lt;/h1&gt;
+&lt;p&gt;&lt;em&gt;This post describes the latest tooling to help test Android Coroutines, provided as part of the &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;kotlinx.coroutines&lt;/code&gt; test libraries, which aim to “provide utilities for efficiently testing coroutines”.&lt;/em&gt;&lt;/p&gt;
+
+&lt;p&gt;&lt;em&gt;This blog post covers how to test the following scenarios involving coroutines:&lt;/em&gt;&lt;/p&gt;
+&lt;ol&gt;
+  &lt;li&gt;&lt;em&gt;Writing a unit test for code that calls a suspend function&lt;/em&gt;&lt;/li&gt;
+  &lt;li&gt;&lt;em&gt;Writing a unit test for code that launches a new coroutine internally&lt;/em&gt;&lt;/li&gt;
+&lt;/ol&gt;
+
+&lt;h1 id=&quot;overview&quot;&gt;Overview&lt;/h1&gt;
+&lt;p&gt;Testing code which creates or uses coroutines has always been a challenge in Android. There have been a few official tools and libraries provided previously which sort of worked, but came with challenges and gotchas. Now, as of around December 2021, we have a new contender to simplify testing coroutines.&lt;/p&gt;
+
+&lt;h1 id=&quot;kotlinx-coroutines-test-module&quot;&gt;kotlinx-coroutines-test Module&lt;/h1&gt;
+&lt;p&gt;A module specifically to improve testing coroutines and code which interacts with coroutines. The &lt;a href=&quot;https://github.com/Kotlin/kotlinx.coroutines/tree/master/kotlinx-coroutines-test&quot;&gt;official docs&lt;/a&gt; are definitely worth reading, and this blog post serves to complement them with additional explanations as to why they’re needed.&lt;/p&gt;
+
+&lt;h2 id=&quot;add-dependencies&quot;&gt;Add Dependencies&lt;/h2&gt;
+&lt;p&gt;Add one or both of the &lt;strong&gt;test&lt;/strong&gt; dependencies below to get started, depending on whether you run JVM-based unit tests, instrumentation tests or both. These should be added to your &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;build.gradle&lt;/code&gt; file.&lt;/p&gt;
+
+&lt;div class=&quot;language-groovy highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;&lt;span class=&quot;n&quot;&gt;dependencies&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;{&lt;/span&gt;
+    
+    &lt;span class=&quot;c1&quot;&gt;// JVM-based unit tests (that don't need a real device or emulator)&lt;/span&gt;
+    &lt;span class=&quot;n&quot;&gt;testImplementation&lt;/span&gt; &lt;span class=&quot;s2&quot;&gt;&quot;org.jetbrains.kotlinx:kotlinx-coroutines-test:1.6.0-RC&quot;&lt;/span&gt;
+    
+    &lt;span class=&quot;c1&quot;&gt;// Instrumentation unit tests (that will require a real device or emulator)&lt;/span&gt;
+    &lt;span class=&quot;n&quot;&gt;androidTestImplementation&lt;/span&gt; &lt;span class=&quot;s2&quot;&gt;&quot;org.jetbrains.kotlinx:kotlinx-coroutines-test:1.6.0-RC&quot;&lt;/span&gt;
+    
+    &lt;span class=&quot;c1&quot;&gt;// Coroutines, and the much-recommended library to add lifecycle-awareness to coroutines&lt;/span&gt;
+    &lt;span class=&quot;n&quot;&gt;implementation&lt;/span&gt; &lt;span class=&quot;s2&quot;&gt;&quot;org.jetbrains.kotlinx:kotlinx-coroutines-android:1.5.2&quot;&lt;/span&gt;
+    &lt;span class=&quot;n&quot;&gt;implementation&lt;/span&gt; &lt;span class=&quot;s2&quot;&gt;&quot;androidx.lifecycle:lifecycle-runtime-ktx:2.4.0&quot;&lt;/span&gt;
+    
+&lt;span class=&quot;o&quot;&gt;}&lt;/span&gt;
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;h1 id=&quot;example-code-using-coroutines&quot;&gt;Example Code using Coroutines&lt;/h1&gt;
+
+&lt;p&gt;Let’s pretend we have a class which does some hard work. This class adds a lot of numbers to a list, and sorts and shuffles them over and over for a while, before returning the first number of the sorted list, which is always 0. But really that’s not important here; what is important is that it does too much work to be called on the main thread.&lt;/p&gt;
+
+&lt;div class=&quot;language-kotlin highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;&lt;span class=&quot;kd&quot;&gt;class&lt;/span&gt; &lt;span class=&quot;nc&quot;&gt;NumberCruncher&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;{&lt;/span&gt;
+
+    &lt;span class=&quot;k&quot;&gt;fun&lt;/span&gt; &lt;span class=&quot;nf&quot;&gt;getResult&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;():&lt;/span&gt; &lt;span class=&quot;nc&quot;&gt;Int&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;{&lt;/span&gt;
+        &lt;span class=&quot;k&quot;&gt;return&lt;/span&gt; &lt;span class=&quot;nf&quot;&gt;longRunningOperation&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;()&lt;/span&gt;
+    &lt;span class=&quot;p&quot;&gt;}&lt;/span&gt;
+
+    &lt;span class=&quot;k&quot;&gt;private&lt;/span&gt; &lt;span class=&quot;k&quot;&gt;fun&lt;/span&gt; &lt;span class=&quot;nf&quot;&gt;longRunningOperation&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;():&lt;/span&gt; &lt;span class=&quot;nc&quot;&gt;Int&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;{&lt;/span&gt;
+        &lt;span class=&quot;kd&quot;&gt;val&lt;/span&gt; &lt;span class=&quot;py&quot;&gt;list&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;=&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;mutableListOf&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;&amp;lt;&lt;/span&gt;&lt;span class=&quot;nc&quot;&gt;Int&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;&amp;gt;()&lt;/span&gt;
+
+        &lt;span class=&quot;k&quot;&gt;for&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;i&lt;/span&gt; &lt;span class=&quot;k&quot;&gt;in&lt;/span&gt; &lt;span class=&quot;mi&quot;&gt;0&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;..&lt;/span&gt;&lt;span class=&quot;mi&quot;&gt;1_000&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;)&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;{&lt;/span&gt;
+            &lt;span class=&quot;n&quot;&gt;list&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;.&lt;/span&gt;&lt;span class=&quot;nf&quot;&gt;add&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;i&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;)&lt;/span&gt;
+        &lt;span class=&quot;p&quot;&gt;}&lt;/span&gt;
+        &lt;span class=&quot;k&quot;&gt;for&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;i&lt;/span&gt; &lt;span class=&quot;k&quot;&gt;in&lt;/span&gt; &lt;span class=&quot;mi&quot;&gt;0&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;..&lt;/span&gt;&lt;span class=&quot;mi&quot;&gt;20_000&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;)&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;{&lt;/span&gt;
+            &lt;span class=&quot;n&quot;&gt;list&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;.&lt;/span&gt;&lt;span class=&quot;nf&quot;&gt;shuffle&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;()&lt;/span&gt;
+            &lt;span class=&quot;n&quot;&gt;list&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;.&lt;/span&gt;&lt;span class=&quot;nf&quot;&gt;sort&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;()&lt;/span&gt;
+        &lt;span class=&quot;p&quot;&gt;}&lt;/span&gt;
+
+        &lt;span class=&quot;k&quot;&gt;return&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;list&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;.&lt;/span&gt;&lt;span class=&quot;nf&quot;&gt;first&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;()&lt;/span&gt;
+    &lt;span class=&quot;p&quot;&gt;}&lt;/span&gt;
+&lt;span class=&quot;p&quot;&gt;}&lt;/span&gt;
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;We have a simple &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;Activity&lt;/code&gt; containing a &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;TextView&lt;/code&gt; and a &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;Button&lt;/code&gt;. When the button is pressed, the &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;TextView&lt;/code&gt; will show a temporary &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;calculating...&lt;/code&gt; message, and then the &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;TextView&lt;/code&gt; will show the result.&lt;/p&gt;
+
+&lt;p&gt;&lt;img src=&quot;/images/coroutine-runTest-activity.png&quot; alt=&quot;Screenshot of the activity described above&quot; height=&quot;600&quot; /&gt;&lt;/p&gt;
+
+&lt;div class=&quot;language-kotlin highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;&lt;span class=&quot;kd&quot;&gt;class&lt;/span&gt; &lt;span class=&quot;nc&quot;&gt;MainActivity&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;nc&quot;&gt;AppCompatActivity&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;()&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;{&lt;/span&gt;
+
+    &lt;span class=&quot;c1&quot;&gt;// UI references&lt;/span&gt;
+    &lt;span class=&quot;k&quot;&gt;private&lt;/span&gt; &lt;span class=&quot;k&quot;&gt;lateinit&lt;/span&gt; &lt;span class=&quot;kd&quot;&gt;var&lt;/span&gt; &lt;span class=&quot;py&quot;&gt;resultTextView&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;nc&quot;&gt;TextView&lt;/span&gt;
+    &lt;span class=&quot;k&quot;&gt;private&lt;/span&gt; &lt;span class=&quot;k&quot;&gt;lateinit&lt;/span&gt; &lt;span class=&quot;kd&quot;&gt;var&lt;/span&gt; &lt;span class=&quot;py&quot;&gt;calculateButton&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;nc&quot;&gt;Button&lt;/span&gt;
+
+    &lt;span class=&quot;c1&quot;&gt;// class which does a lot of hard work&lt;/span&gt;
+    &lt;span class=&quot;k&quot;&gt;private&lt;/span&gt; &lt;span class=&quot;kd&quot;&gt;val&lt;/span&gt; &lt;span class=&quot;py&quot;&gt;numberCruncher&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;=&lt;/span&gt; &lt;span class=&quot;nc&quot;&gt;NumberCruncher&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;()&lt;/span&gt;
+
+    &lt;span class=&quot;k&quot;&gt;override&lt;/span&gt; &lt;span class=&quot;k&quot;&gt;fun&lt;/span&gt; &lt;span class=&quot;nf&quot;&gt;onCreate&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;savedInstanceState&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;nc&quot;&gt;Bundle&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;?)&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;{&lt;/span&gt;
+        &lt;span class=&quot;k&quot;&gt;super&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;.&lt;/span&gt;&lt;span class=&quot;nf&quot;&gt;onCreate&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;savedInstanceState&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;)&lt;/span&gt;
+        &lt;span class=&quot;nf&quot;&gt;setContentView&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;nc&quot;&gt;R&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;.&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;layout&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;.&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;activity_main&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;)&lt;/span&gt;
+        &lt;span class=&quot;n&quot;&gt;resultTextView&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;=&lt;/span&gt; &lt;span class=&quot;nf&quot;&gt;findViewById&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;nc&quot;&gt;R&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;.&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;id&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;.&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;resultTextView&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;)&lt;/span&gt;
+        &lt;span class=&quot;n&quot;&gt;calculateButton&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;=&lt;/span&gt; &lt;span class=&quot;nf&quot;&gt;findViewById&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;nc&quot;&gt;R&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;.&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;id&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;.&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;calculateButton&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;)&lt;/span&gt;
+
+        &lt;span class=&quot;n&quot;&gt;calculateButton&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;.&lt;/span&gt;&lt;span class=&quot;nf&quot;&gt;setOnClickListener&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;{&lt;/span&gt;
+            &lt;span class=&quot;n&quot;&gt;resultTextView&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;.&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;text&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;=&lt;/span&gt; &lt;span class=&quot;nf&quot;&gt;getText&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;nc&quot;&gt;R&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;.&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;string&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;.&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;calculating&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;)&lt;/span&gt;
+            &lt;span class=&quot;kd&quot;&gt;val&lt;/span&gt; &lt;span class=&quot;py&quot;&gt;result&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;=&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;numberCruncher&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;.&lt;/span&gt;&lt;span class=&quot;nf&quot;&gt;getResult&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;()&lt;/span&gt;
+            &lt;span class=&quot;n&quot;&gt;resultTextView&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;.&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;text&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;=&lt;/span&gt; &lt;span class=&quot;nc&quot;&gt;String&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;.&lt;/span&gt;&lt;span class=&quot;nf&quot;&gt;format&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;s&quot;&gt;&quot;Got result %d&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;result&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;)&lt;/span&gt;
+        &lt;span class=&quot;p&quot;&gt;}&lt;/span&gt;
+    &lt;span class=&quot;p&quot;&gt;}&lt;/span&gt;
+&lt;span class=&quot;p&quot;&gt;}&lt;/span&gt;
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;h2 id=&quot;adding-coroutines-into-the-example&quot;&gt;Adding coroutines into the example&lt;/h2&gt;
+&lt;p&gt;If we try to call that code as is, the UI will completely freeze as we try to do too much work from the main thread. Let’s modify &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;NumberCruncher&lt;/code&gt; to make use of coroutines so that it delegates the CPU-intensive work to another thread.&lt;/p&gt;
+
+&lt;div class=&quot;language-kotlin highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;&lt;span class=&quot;kd&quot;&gt;class&lt;/span&gt; &lt;span class=&quot;nc&quot;&gt;NumberCruncher&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;{&lt;/span&gt;
+
+    &lt;span class=&quot;k&quot;&gt;suspend&lt;/span&gt; &lt;span class=&quot;k&quot;&gt;fun&lt;/span&gt; &lt;span class=&quot;nf&quot;&gt;getResult&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;():&lt;/span&gt; &lt;span class=&quot;nc&quot;&gt;Int&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;{&lt;/span&gt;
+        &lt;span class=&quot;k&quot;&gt;return&lt;/span&gt; &lt;span class=&quot;nf&quot;&gt;withContext&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;nc&quot;&gt;Dispatchers&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;.&lt;/span&gt;&lt;span class=&quot;nc&quot;&gt;Default&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;)&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;{&lt;/span&gt;
+            &lt;span class=&quot;nf&quot;&gt;longRunningOperation&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;()&lt;/span&gt;
+        &lt;span class=&quot;p&quot;&gt;}&lt;/span&gt;
+    &lt;span class=&quot;p&quot;&gt;}&lt;/span&gt;
+
+    &lt;span class=&quot;c1&quot;&gt;// function body hidden as it's the same as before. We won't change this function at all in this blog post.  &lt;/span&gt;
+    &lt;span class=&quot;k&quot;&gt;private&lt;/span&gt; &lt;span class=&quot;k&quot;&gt;fun&lt;/span&gt; &lt;span class=&quot;nf&quot;&gt;longRunningOperation&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;():&lt;/span&gt; &lt;span class=&quot;nc&quot;&gt;Int&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;{&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;..&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;.}&lt;/span&gt;
+&lt;span class=&quot;p&quot;&gt;}&lt;/span&gt;
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+&lt;p&gt;We’ve made &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;getResult()&lt;/code&gt; a &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;suspend&lt;/code&gt; function, and ensured the heavy CPU work is done away from the main thread using &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;withContext(Dispatchers.Default)&lt;/code&gt;. When we run the app now, we can see the UI does not freeze, and we can see the temporary &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;calculating...&lt;/code&gt; message. Huzzah! But let’s not celebrate too quickly; we’ve still got to write unit tests for our &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;NumberCruncher&lt;/code&gt; class.&lt;/p&gt;
+
+&lt;h1 id=&quot;writing-a-unit-test-for-code-that-calls-a-suspend-function&quot;&gt;Writing a unit test for code that calls a suspend function&lt;/h1&gt;
+
+&lt;h2 id=&quot;attempt-1-not-using-coroutines-&quot;&gt;Attempt 1, not using coroutines ❌&lt;/h2&gt;
+
+&lt;div class=&quot;language-kotlin highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;&lt;span class=&quot;kd&quot;&gt;class&lt;/span&gt; &lt;span class=&quot;nc&quot;&gt;NumberCruncherTest&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;{&lt;/span&gt;
+    
+    &lt;span class=&quot;k&quot;&gt;private&lt;/span&gt; &lt;span class=&quot;kd&quot;&gt;val&lt;/span&gt; &lt;span class=&quot;py&quot;&gt;numberCruncher&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;=&lt;/span&gt; &lt;span class=&quot;nc&quot;&gt;NumberCruncher&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;()&lt;/span&gt;
+    
+    &lt;span class=&quot;nd&quot;&gt;@Test&lt;/span&gt;
+    &lt;span class=&quot;k&quot;&gt;fun&lt;/span&gt; &lt;span class=&quot;nf&quot;&gt;test&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;()&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;{&lt;/span&gt;
+        &lt;span class=&quot;n&quot;&gt;numberCruncher&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;.&lt;/span&gt;&lt;span class=&quot;nf&quot;&gt;getResult&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;()&lt;/span&gt; &lt;span class=&quot;c1&quot;&gt;// ❌ won't compile&lt;/span&gt;
+    &lt;span class=&quot;p&quot;&gt;}&lt;/span&gt;
+    
+&lt;span class=&quot;p&quot;&gt;}&lt;/span&gt;
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;The compiler won’t let us call &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;numberCruncher.getResult()&lt;/code&gt; like this since it is a &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;suspend&lt;/code&gt; function, meaning it can only be called from a coroutine.&lt;/p&gt;
+
+&lt;h2 id=&quot;attempt-2-launching-a-coroutine-from-the-test-&quot;&gt;Attempt 2, launching a coroutine from the test ❌&lt;/h2&gt;
+
+&lt;div class=&quot;language-kotlin highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;&lt;span class=&quot;nd&quot;&gt;@Test&lt;/span&gt;
+&lt;span class=&quot;k&quot;&gt;fun&lt;/span&gt; &lt;span class=&quot;nf&quot;&gt;test&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;()&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;{&lt;/span&gt;
+    &lt;span class=&quot;nc&quot;&gt;GlobalScope&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;.&lt;/span&gt;&lt;span class=&quot;nf&quot;&gt;launch&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;{&lt;/span&gt;
+        &lt;span class=&quot;nf&quot;&gt;assertEquals&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;mi&quot;&gt;0&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;numberCruncher&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;.&lt;/span&gt;&lt;span class=&quot;nf&quot;&gt;getResult&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;())&lt;/span&gt;
+    &lt;span class=&quot;p&quot;&gt;}&lt;/span&gt;
+&lt;span class=&quot;p&quot;&gt;}&lt;/span&gt;
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;If you try launching a new coroutine inside your test like this, you might be pleased to see the test passing. However, &lt;strong&gt;this isn’t working at all&lt;/strong&gt;, and if you were to change that assertion to expect any other value, the test would continue to pass. This is because the test is finished before the calculation can finish, and before the new coroutine can even start.&lt;/p&gt;
+
+&lt;p&gt;💡 This is why you should always start with a failing test, then make it pass.&lt;/p&gt;
+
+&lt;h2 id=&quot;attempt-3-using-runblocking-&quot;&gt;Attempt 3, using &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;runBlocking&lt;/code&gt; ❌&lt;/h2&gt;
+&lt;div class=&quot;language-kotlin highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;&lt;span class=&quot;nd&quot;&gt;@Test&lt;/span&gt;
+&lt;span class=&quot;k&quot;&gt;fun&lt;/span&gt; &lt;span class=&quot;nf&quot;&gt;test&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;()&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;=&lt;/span&gt; &lt;span class=&quot;nf&quot;&gt;runBlocking&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;{&lt;/span&gt; 
+    &lt;span class=&quot;nf&quot;&gt;assertEquals&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;mi&quot;&gt;0&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;numberCruncher&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;.&lt;/span&gt;&lt;span class=&quot;nf&quot;&gt;getResult&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;())&lt;/span&gt;
+&lt;span class=&quot;p&quot;&gt;}&lt;/span&gt;
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;Previously, for testing coroutines, there were a few options including using &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;runBlocking&lt;/code&gt;, and &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;runBlockingTest&lt;/code&gt;. However promising these seemed, there were always scenarios where they didn’t work as expected or were error-prone. In a &lt;a href=&quot;https://craigrussell.io/2019/11/unit-testing-coroutine-suspend-functions-using-testcoroutinedispatcher/&quot;&gt;blog post&lt;/a&gt; I wrote about this a few years back, I noted a scenario where &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;runBlockingTest&lt;/code&gt; should have worked, including linking to a long-running &lt;a href=&quot;https://github.com/Kotlin/kotlinx.coroutines/issues/1204&quot;&gt;PR&lt;/a&gt; which promised a fix was coming. However, it never did. Instead, that PR was closed off in favor of the new coroutine testing tooling.&lt;/p&gt;
+
+&lt;p&gt;In short, this isn’t the solution you’re looking for either. It might work in some cases and confusingly not work in others. However, don’t despair, help is at hand.&lt;/p&gt;
+
+&lt;h2 id=&quot;attempt-4-using-runtest-&quot;&gt;Attempt 4, using &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;runTest&lt;/code&gt; ✅&lt;/h2&gt;
+&lt;p&gt;As promised, the latest coroutine testing tooling offers a solution with the introduction of a new coroutine builder specifically to be used in tests, called &lt;a href=&quot;https://kotlin.github.io/kotlinx.coroutines/kotlinx-coroutines-test/kotlinx.coroutines.test/run-test.html&quot;&gt;&lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;runTest&lt;/code&gt;&lt;/a&gt;.&lt;/p&gt;
+
+&lt;div class=&quot;language-kotlin highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;&lt;span class=&quot;nd&quot;&gt;@Test&lt;/span&gt;
+&lt;span class=&quot;k&quot;&gt;fun&lt;/span&gt; &lt;span class=&quot;nf&quot;&gt;test&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;()&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;=&lt;/span&gt; &lt;span class=&quot;nf&quot;&gt;runTest&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;{&lt;/span&gt; 
+    &lt;span class=&quot;nf&quot;&gt;assertEquals&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;mi&quot;&gt;0&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;numberCruncher&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;.&lt;/span&gt;&lt;span class=&quot;nf&quot;&gt;getResult&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;())&lt;/span&gt;
+&lt;span class=&quot;p&quot;&gt;}&lt;/span&gt;
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;🎉 This time, we have success. The &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;runTest&lt;/code&gt; coroutine builder means you can test your code which calls &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;suspend&lt;/code&gt; functions, and doesn’t come with the same problems that its predecessor &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;runBlockingTest&lt;/code&gt; had.&lt;/p&gt;
+
+&lt;h1 id=&quot;writing-a-unit-test-for-code-that-launches-new-coroutines-under-the-hood&quot;&gt;Writing a unit test for code that launches new coroutines under the hood&lt;/h1&gt;
+&lt;p&gt;In the above example, our &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;NumberCruncher&lt;/code&gt; exposed a &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;suspend&lt;/code&gt; function. However sometimes you will be trying to test code that internally launches new coroutines.&lt;/p&gt;
+
+&lt;div class=&quot;language-kotlin highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;&lt;span class=&quot;c1&quot;&gt;// 👇 We pass a `CoroutineScope` in to the constructor now to let us launch new coroutines&lt;/span&gt;
+&lt;span class=&quot;kd&quot;&gt;class&lt;/span&gt; &lt;span class=&quot;nc&quot;&gt;NumberCruncher&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;k&quot;&gt;private&lt;/span&gt; &lt;span class=&quot;kd&quot;&gt;val&lt;/span&gt; &lt;span class=&quot;py&quot;&gt;coroutineScope&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;nc&quot;&gt;CoroutineScope&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;)&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;{&lt;/span&gt;
+
+    &lt;span class=&quot;c1&quot;&gt;// 👇 We have a `SharedFlow` of results now.&lt;/span&gt;
+    &lt;span class=&quot;k&quot;&gt;private&lt;/span&gt; &lt;span class=&quot;kd&quot;&gt;val&lt;/span&gt; &lt;span class=&quot;py&quot;&gt;_results&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;=&lt;/span&gt; &lt;span class=&quot;nc&quot;&gt;MutableSharedFlow&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;&amp;lt;&lt;/span&gt;&lt;span class=&quot;nc&quot;&gt;Int&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;&amp;gt;()&lt;/span&gt;
+    &lt;span class=&quot;k&quot;&gt;fun&lt;/span&gt; &lt;span class=&quot;nf&quot;&gt;results&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;()&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;=&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;_results&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;.&lt;/span&gt;&lt;span class=&quot;nf&quot;&gt;asSharedFlow&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;()&lt;/span&gt;
+
+    &lt;span class=&quot;c1&quot;&gt;// 👇 We now allow a new result to be requested, but it isn't returned immediately.&lt;/span&gt;
+    &lt;span class=&quot;k&quot;&gt;fun&lt;/span&gt; &lt;span class=&quot;nf&quot;&gt;calculate&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;()&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;{&lt;/span&gt;
+
+        &lt;span class=&quot;c1&quot;&gt;// 👇 we have a `launch` in here now, where we had a `withContext` before&lt;/span&gt;
+        &lt;span class=&quot;n&quot;&gt;coroutineScope&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;.&lt;/span&gt;&lt;span class=&quot;nf&quot;&gt;launch&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;nc&quot;&gt;Dispatchers&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;.&lt;/span&gt;&lt;span class=&quot;nc&quot;&gt;Default&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;)&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;{&lt;/span&gt;
+            &lt;span class=&quot;kd&quot;&gt;val&lt;/span&gt; &lt;span class=&quot;py&quot;&gt;result&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;=&lt;/span&gt; &lt;span class=&quot;nf&quot;&gt;longRunningOperation&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;()&lt;/span&gt;
+
+            &lt;span class=&quot;c1&quot;&gt;// We've added a 5s delay here to make testing even harder. &lt;/span&gt;
+            &lt;span class=&quot;c1&quot;&gt;// 👇 Ideally, production code would respect this delay, but unit tests would not it will slow down your test suite.&lt;/span&gt;
+            &lt;span class=&quot;nf&quot;&gt;delay&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;mi&quot;&gt;5_000&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;)&lt;/span&gt;
+
+            &lt;span class=&quot;n&quot;&gt;_results&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;.&lt;/span&gt;&lt;span class=&quot;nf&quot;&gt;emit&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;result&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;)&lt;/span&gt;
+        &lt;span class=&quot;p&quot;&gt;}&lt;/span&gt;
+    &lt;span class=&quot;p&quot;&gt;}&lt;/span&gt;
+    
+    &lt;span class=&quot;c1&quot;&gt;// unchanged&lt;/span&gt;
+    &lt;span class=&quot;k&quot;&gt;private&lt;/span&gt; &lt;span class=&quot;k&quot;&gt;fun&lt;/span&gt; &lt;span class=&quot;nf&quot;&gt;longRunningOperation&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;():&lt;/span&gt; &lt;span class=&quot;nc&quot;&gt;Int&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;{&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;..&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;.}&lt;/span&gt;
+&lt;span class=&quot;p&quot;&gt;}&lt;/span&gt;
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+&lt;p&gt;We’ve made our code more reactive, since reactive code is in fashion 👔. Before, we could call &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;getResult()&lt;/code&gt; and wait for the result to be returned. Now, we can request a new result be calculated but it won’t be returned there and then; instead, it will be emitted from a &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;Flow&lt;/code&gt; shortly afterwards when it’s calculated.&lt;/p&gt;
+
+&lt;p&gt;Testing this kind of code is harder than before. Because this code internally calls &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;launch&lt;/code&gt; to create a new coroutine (and doesn’t expose the &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;Job&lt;/code&gt; externally) ensuring the logic is executed while the unit test is running is important. We don’t want to hit the problem from before when the unit test completes before the coroutine has been launched, as we aren’t testing what we think we are testing if that happens.&lt;/p&gt;
+
+&lt;h2 id=&quot;attempt-1-testing-this-code-using-only-runtest-&quot;&gt;Attempt 1, testing this code using only &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;runTest&lt;/code&gt; ❌&lt;/h2&gt;
+
+&lt;div class=&quot;language-kotlin highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;&lt;span class=&quot;nd&quot;&gt;@Test&lt;/span&gt;
+&lt;span class=&quot;k&quot;&gt;fun&lt;/span&gt; &lt;span class=&quot;nf&quot;&gt;test&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;()&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;=&lt;/span&gt; &lt;span class=&quot;nf&quot;&gt;runTest&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;{&lt;/span&gt;
+    &lt;span class=&quot;kd&quot;&gt;val&lt;/span&gt; &lt;span class=&quot;py&quot;&gt;numberCruncher&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;=&lt;/span&gt; &lt;span class=&quot;nc&quot;&gt;NumberCruncher&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;k&quot;&gt;this&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;)&lt;/span&gt;
+    &lt;span class=&quot;n&quot;&gt;numberCruncher&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;.&lt;/span&gt;&lt;span class=&quot;nf&quot;&gt;calculate&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;()&lt;/span&gt;
+    &lt;span class=&quot;nf&quot;&gt;assertEquals&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;mi&quot;&gt;0&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;numberCruncher&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;.&lt;/span&gt;&lt;span class=&quot;nf&quot;&gt;results&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;().&lt;/span&gt;&lt;span class=&quot;nf&quot;&gt;first&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;())&lt;/span&gt;
+&lt;span class=&quot;p&quot;&gt;}&lt;/span&gt;
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;This looks like it should work, and indeed running it you’ll find the test passing, but it will take a while. The reason it’s so slow is because that &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;delay(5_000)&lt;/code&gt; we added is being respected even in the unit test. Why isn’t &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;runTest&lt;/code&gt; doing what it claims to do in the docs: &lt;em&gt;“The calls to delay are automatically skipped”&lt;/em&gt;? The answer is given in the docs in the section called &lt;a href=&quot;https://github.com/Kotlin/kotlinx.coroutines/tree/master/kotlinx-coroutines-test#virtual-time-support-with-other-dispatchers&quot;&gt;Virtual Time Support With Other Dispatchers&lt;/a&gt;.&lt;/p&gt;
+
+&lt;blockquote&gt;
+  &lt;p&gt;Calls to withContext(Dispatchers.IO), withContext(Dispatchers.Default), and withContext(Dispatchers.Main) are common in coroutines-based code bases. Unfortunately, just executing code in a test will not lead to these dispatchers using the virtual time source, so delays will not be skipped in them. Tests should, when possible, replace these dispatchers with a TestDispatcher.&lt;/p&gt;
+&lt;/blockquote&gt;
+
+&lt;h2 id=&quot;injecting-coroutine-dispatchers&quot;&gt;Injecting coroutine dispatchers&lt;/h2&gt;
+&lt;p&gt;We need to &lt;strong&gt;stop hardcoding the dispatchers&lt;/strong&gt; using code like &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;Dispatchers.Default&lt;/code&gt; and instead provide a way to inject dispatchers into classes. One simple mechanism I use for this is to define a &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;DispatcherProvider&lt;/code&gt; interface.&lt;/p&gt;
+
+&lt;div class=&quot;language-kotlin highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;&lt;span class=&quot;kd&quot;&gt;interface&lt;/span&gt; &lt;span class=&quot;nc&quot;&gt;DispatcherProvider&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;{&lt;/span&gt;
+
+    &lt;span class=&quot;k&quot;&gt;fun&lt;/span&gt; &lt;span class=&quot;nf&quot;&gt;main&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;():&lt;/span&gt; &lt;span class=&quot;nc&quot;&gt;CoroutineDispatcher&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;=&lt;/span&gt; &lt;span class=&quot;nc&quot;&gt;Dispatchers&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;.&lt;/span&gt;&lt;span class=&quot;nc&quot;&gt;Main&lt;/span&gt;
+    &lt;span class=&quot;k&quot;&gt;fun&lt;/span&gt; &lt;span class=&quot;nf&quot;&gt;default&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;():&lt;/span&gt; &lt;span class=&quot;nc&quot;&gt;CoroutineDispatcher&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;=&lt;/span&gt; &lt;span class=&quot;nc&quot;&gt;Dispatchers&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;.&lt;/span&gt;&lt;span class=&quot;nc&quot;&gt;Default&lt;/span&gt;
+    &lt;span class=&quot;k&quot;&gt;fun&lt;/span&gt; &lt;span class=&quot;nf&quot;&gt;io&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;():&lt;/span&gt; &lt;span class=&quot;nc&quot;&gt;CoroutineDispatcher&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;=&lt;/span&gt; &lt;span class=&quot;nc&quot;&gt;Dispatchers&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;.&lt;/span&gt;&lt;span class=&quot;nc&quot;&gt;IO&lt;/span&gt;
+    &lt;span class=&quot;k&quot;&gt;fun&lt;/span&gt; &lt;span class=&quot;nf&quot;&gt;unconfined&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;():&lt;/span&gt; &lt;span class=&quot;nc&quot;&gt;CoroutineDispatcher&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;=&lt;/span&gt; &lt;span class=&quot;nc&quot;&gt;Dispatchers&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;.&lt;/span&gt;&lt;span class=&quot;nc&quot;&gt;Unconfined&lt;/span&gt;
+
+&lt;span class=&quot;p&quot;&gt;}&lt;/span&gt;
+
+&lt;span class=&quot;kd&quot;&gt;class&lt;/span&gt; &lt;span class=&quot;nc&quot;&gt;DefaultDispatcherProvider&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;nc&quot;&gt;DispatcherProvider&lt;/span&gt;
+
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;This interface defines defaults for each of the main dispatchers you’ll already be familiar with, and also defines a ready-made class called &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;DefaultDispatcherProvider&lt;/code&gt; for convenience. To use this, we pass a dispatcher provider into the constructor of a class, like this:&lt;/p&gt;
+
+&lt;div class=&quot;language-kotlin highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;&lt;span class=&quot;kd&quot;&gt;class&lt;/span&gt; &lt;span class=&quot;nc&quot;&gt;NumberCruncher&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;k&quot;&gt;private&lt;/span&gt; &lt;span class=&quot;kd&quot;&gt;val&lt;/span&gt; &lt;span class=&quot;py&quot;&gt;coroutineScope&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;nc&quot;&gt;CoroutineScope&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt;
+                     &lt;span class=&quot;k&quot;&gt;private&lt;/span&gt; &lt;span class=&quot;kd&quot;&gt;val&lt;/span&gt; &lt;span class=&quot;py&quot;&gt;dispatchers&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;nc&quot;&gt;DispatcherProvider&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;=&lt;/span&gt; &lt;span class=&quot;nc&quot;&gt;DefaultDispatcherProvider&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;())&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;{&lt;/span&gt;
+    
+    &lt;span class=&quot;o&quot;&gt;..&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;.&lt;/span&gt;
+
+    &lt;span class=&quot;k&quot;&gt;fun&lt;/span&gt; &lt;span class=&quot;nf&quot;&gt;calculate&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;()&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;{&lt;/span&gt;
+
+        &lt;span class=&quot;c1&quot;&gt;// 👇 we now use `dispatchers.default()` instead of hardcoding the dispatcher to `Dispatchers.Default'&lt;/span&gt;
+        &lt;span class=&quot;n&quot;&gt;coroutineScope&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;.&lt;/span&gt;&lt;span class=&quot;nf&quot;&gt;launch&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;dispatchers&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;.&lt;/span&gt;&lt;span class=&quot;nf&quot;&gt;default&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;())&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;{&lt;/span&gt;
+            &lt;span class=&quot;o&quot;&gt;..&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;.&lt;/span&gt; 
+        &lt;span class=&quot;p&quot;&gt;}&lt;/span&gt;
+&lt;span class=&quot;p&quot;&gt;}&lt;/span&gt; 
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;In production code, the default parameter value is used, meaning you don’t have to explicitly provide it anywhere. But the value now is that while unit testing, you can provide an alternative version which uses a &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;TestDispatcher&lt;/code&gt; instead of a real one. For convenience, some of the boilerplate required in each test can be encapsulated in a test rule.&lt;/p&gt;
+
+&lt;div class=&quot;language-kotlin highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;&lt;span class=&quot;nd&quot;&gt;@ExperimentalCoroutinesApi&lt;/span&gt;
+&lt;span class=&quot;kd&quot;&gt;class&lt;/span&gt; &lt;span class=&quot;nc&quot;&gt;CoroutineTestRule&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;kd&quot;&gt;val&lt;/span&gt; &lt;span class=&quot;py&quot;&gt;testDispatcher&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;nc&quot;&gt;TestDispatcher&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;=&lt;/span&gt; &lt;span class=&quot;nc&quot;&gt;UnconfinedTestDispatcher&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;nc&quot;&gt;TestCoroutineScheduler&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;()))&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;nc&quot;&gt;TestWatcher&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;()&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;{&lt;/span&gt;
+
+    &lt;span class=&quot;kd&quot;&gt;val&lt;/span&gt; &lt;span class=&quot;py&quot;&gt;testDispatcherProvider&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;=&lt;/span&gt; &lt;span class=&quot;kd&quot;&gt;object&lt;/span&gt; &lt;span class=&quot;err&quot;&gt;: &lt;/span&gt;&lt;span class=&quot;nc&quot;&gt;DispatcherProvider&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;{&lt;/span&gt;
+        &lt;span class=&quot;k&quot;&gt;override&lt;/span&gt; &lt;span class=&quot;k&quot;&gt;fun&lt;/span&gt; &lt;span class=&quot;nf&quot;&gt;default&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;():&lt;/span&gt; &lt;span class=&quot;nc&quot;&gt;CoroutineDispatcher&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;=&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;testDispatcher&lt;/span&gt;
+        &lt;span class=&quot;k&quot;&gt;override&lt;/span&gt; &lt;span class=&quot;k&quot;&gt;fun&lt;/span&gt; &lt;span class=&quot;nf&quot;&gt;io&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;():&lt;/span&gt; &lt;span class=&quot;nc&quot;&gt;CoroutineDispatcher&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;=&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;testDispatcher&lt;/span&gt;
+        &lt;span class=&quot;k&quot;&gt;override&lt;/span&gt; &lt;span class=&quot;k&quot;&gt;fun&lt;/span&gt; &lt;span class=&quot;nf&quot;&gt;main&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;():&lt;/span&gt; &lt;span class=&quot;nc&quot;&gt;CoroutineDispatcher&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;=&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;testDispatcher&lt;/span&gt;
+        &lt;span class=&quot;k&quot;&gt;override&lt;/span&gt; &lt;span class=&quot;k&quot;&gt;fun&lt;/span&gt; &lt;span class=&quot;nf&quot;&gt;unconfined&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;():&lt;/span&gt; &lt;span class=&quot;nc&quot;&gt;CoroutineDispatcher&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;=&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;testDispatcher&lt;/span&gt;
+    &lt;span class=&quot;p&quot;&gt;}&lt;/span&gt;
+
+    &lt;span class=&quot;k&quot;&gt;override&lt;/span&gt; &lt;span class=&quot;k&quot;&gt;fun&lt;/span&gt; &lt;span class=&quot;nf&quot;&gt;starting&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;description&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;nc&quot;&gt;Description&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;?)&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;{&lt;/span&gt;
+        &lt;span class=&quot;k&quot;&gt;super&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;.&lt;/span&gt;&lt;span class=&quot;nf&quot;&gt;starting&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;description&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;)&lt;/span&gt;
+        &lt;span class=&quot;nc&quot;&gt;Dispatchers&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;.&lt;/span&gt;&lt;span class=&quot;nf&quot;&gt;setMain&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;testDispatcher&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;)&lt;/span&gt;
+    &lt;span class=&quot;p&quot;&gt;}&lt;/span&gt;
+
+    &lt;span class=&quot;k&quot;&gt;override&lt;/span&gt; &lt;span class=&quot;k&quot;&gt;fun&lt;/span&gt; &lt;span class=&quot;nf&quot;&gt;finished&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;description&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;nc&quot;&gt;Description&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;?)&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;{&lt;/span&gt;
+        &lt;span class=&quot;k&quot;&gt;super&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;.&lt;/span&gt;&lt;span class=&quot;nf&quot;&gt;finished&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;description&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;)&lt;/span&gt;
+        &lt;span class=&quot;nc&quot;&gt;Dispatchers&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;.&lt;/span&gt;&lt;span class=&quot;nf&quot;&gt;resetMain&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;()&lt;/span&gt;
+    &lt;span class=&quot;p&quot;&gt;}&lt;/span&gt;
+&lt;span class=&quot;p&quot;&gt;}&lt;/span&gt;
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;Now, you can apply that test rule and use its test dispatcher provider when creating your class under test.&lt;/p&gt;
+
+&lt;h1 id=&quot;final-working-attempt-using-runtest-and-providing-test-dispatchers-&quot;&gt;Final working attempt, using &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;runTest&lt;/code&gt;, and providing test dispatchers ✅&lt;/h1&gt;
+
+&lt;p&gt;Let’s summarise what we have done:&lt;/p&gt;
+&lt;ol&gt;
+  &lt;li&gt;Used &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;runTest&lt;/code&gt; to create a coroutine to be used while unit testing&lt;/li&gt;
+  &lt;li&gt;Used the coroutine scope provided by &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;runTest&lt;/code&gt; by passing it to the class that launches a new coroutine&lt;/li&gt;
+  &lt;li&gt;Provided alternative coroutine dispatchers while testing&lt;/li&gt;
+  &lt;li&gt;Created a coroutine test rule to hold some boilerplate&lt;/li&gt;
+&lt;/ol&gt;
+
+&lt;div class=&quot;language-kotlin highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;&lt;span class=&quot;kd&quot;&gt;class&lt;/span&gt; &lt;span class=&quot;nc&quot;&gt;NumberCruncher&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;k&quot;&gt;private&lt;/span&gt; &lt;span class=&quot;kd&quot;&gt;val&lt;/span&gt; &lt;span class=&quot;py&quot;&gt;coroutineScope&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;nc&quot;&gt;CoroutineScope&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt;
+                     &lt;span class=&quot;k&quot;&gt;private&lt;/span&gt; &lt;span class=&quot;kd&quot;&gt;val&lt;/span&gt; &lt;span class=&quot;py&quot;&gt;dispatchers&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;nc&quot;&gt;DispatcherProvider&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;=&lt;/span&gt; &lt;span class=&quot;nc&quot;&gt;DefaultDispatcherProvider&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;())&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;{&lt;/span&gt;
+
+    &lt;span class=&quot;k&quot;&gt;private&lt;/span&gt; &lt;span class=&quot;kd&quot;&gt;val&lt;/span&gt; &lt;span class=&quot;py&quot;&gt;_results&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;=&lt;/span&gt; &lt;span class=&quot;nc&quot;&gt;MutableSharedFlow&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;&amp;lt;&lt;/span&gt;&lt;span class=&quot;nc&quot;&gt;Int&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;&amp;gt;()&lt;/span&gt;
+    &lt;span class=&quot;k&quot;&gt;fun&lt;/span&gt; &lt;span class=&quot;nf&quot;&gt;results&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;()&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;=&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;_results&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;.&lt;/span&gt;&lt;span class=&quot;nf&quot;&gt;asSharedFlow&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;()&lt;/span&gt;
+
+    &lt;span class=&quot;k&quot;&gt;fun&lt;/span&gt; &lt;span class=&quot;nf&quot;&gt;calculate&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;()&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;{&lt;/span&gt;
+
+        &lt;span class=&quot;c1&quot;&gt;// 👇 using dispatcher provider avoids hardcoding dispatcher, allowing for us to use a `TestDispatcher` while testing&lt;/span&gt;
+        &lt;span class=&quot;n&quot;&gt;coroutineScope&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;.&lt;/span&gt;&lt;span class=&quot;nf&quot;&gt;launch&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;dispatchers&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;.&lt;/span&gt;&lt;span class=&quot;nf&quot;&gt;default&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;())&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;{&lt;/span&gt;
+            &lt;span class=&quot;kd&quot;&gt;val&lt;/span&gt; &lt;span class=&quot;py&quot;&gt;result&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;=&lt;/span&gt; &lt;span class=&quot;nf&quot;&gt;longRunningOperation&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;()&lt;/span&gt;
+            &lt;span class=&quot;nf&quot;&gt;delay&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;mi&quot;&gt;5_000&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;)&lt;/span&gt;
+            &lt;span class=&quot;n&quot;&gt;_results&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;.&lt;/span&gt;&lt;span class=&quot;nf&quot;&gt;emit&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;result&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;)&lt;/span&gt;
+        &lt;span class=&quot;p&quot;&gt;}&lt;/span&gt;
+    &lt;span class=&quot;p&quot;&gt;}&lt;/span&gt;
+
+    &lt;span class=&quot;k&quot;&gt;private&lt;/span&gt; &lt;span class=&quot;k&quot;&gt;fun&lt;/span&gt; &lt;span class=&quot;nf&quot;&gt;longRunningOperation&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;():&lt;/span&gt; &lt;span class=&quot;nc&quot;&gt;Int&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;{&lt;/span&gt;
+        &lt;span class=&quot;kd&quot;&gt;val&lt;/span&gt; &lt;span class=&quot;py&quot;&gt;list&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;=&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;mutableListOf&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;&amp;lt;&lt;/span&gt;&lt;span class=&quot;nc&quot;&gt;Int&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;&amp;gt;()&lt;/span&gt;
+
+        &lt;span class=&quot;k&quot;&gt;for&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;i&lt;/span&gt; &lt;span class=&quot;k&quot;&gt;in&lt;/span&gt; &lt;span class=&quot;mi&quot;&gt;0&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;..&lt;/span&gt;&lt;span class=&quot;mi&quot;&gt;1_000&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;)&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;{&lt;/span&gt;
+            &lt;span class=&quot;n&quot;&gt;list&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;.&lt;/span&gt;&lt;span class=&quot;nf&quot;&gt;add&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;i&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;)&lt;/span&gt;
+        &lt;span class=&quot;p&quot;&gt;}&lt;/span&gt;
+        &lt;span class=&quot;k&quot;&gt;for&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;i&lt;/span&gt; &lt;span class=&quot;k&quot;&gt;in&lt;/span&gt; &lt;span class=&quot;mi&quot;&gt;0&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;..&lt;/span&gt;&lt;span class=&quot;mi&quot;&gt;20_000&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;)&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;{&lt;/span&gt;
+            &lt;span class=&quot;n&quot;&gt;list&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;.&lt;/span&gt;&lt;span class=&quot;nf&quot;&gt;shuffle&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;()&lt;/span&gt;
+            &lt;span class=&quot;n&quot;&gt;list&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;.&lt;/span&gt;&lt;span class=&quot;nf&quot;&gt;sort&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;()&lt;/span&gt;
+        &lt;span class=&quot;p&quot;&gt;}&lt;/span&gt;
+
+        &lt;span class=&quot;k&quot;&gt;return&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;list&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;.&lt;/span&gt;&lt;span class=&quot;nf&quot;&gt;first&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;()&lt;/span&gt;
+    &lt;span class=&quot;p&quot;&gt;}&lt;/span&gt;
+&lt;span class=&quot;p&quot;&gt;}&lt;/span&gt;
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;div class=&quot;language-kotlin highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;&lt;span class=&quot;err&quot;&gt;@&lt;/span&gt;&lt;span class=&quot;k&quot;&gt;get&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;:&lt;/span&gt;&lt;span class=&quot;nc&quot;&gt;Rule&lt;/span&gt;
+&lt;span class=&quot;kd&quot;&gt;val&lt;/span&gt; &lt;span class=&quot;py&quot;&gt;coroutineTestRule&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;nc&quot;&gt;CoroutineTestRule&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;=&lt;/span&gt; &lt;span class=&quot;nc&quot;&gt;CoroutineTestRule&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;()&lt;/span&gt;
+
+&lt;span class=&quot;nd&quot;&gt;@Test&lt;/span&gt;
+&lt;span class=&quot;k&quot;&gt;fun&lt;/span&gt; &lt;span class=&quot;nf&quot;&gt;test&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;()&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;=&lt;/span&gt; &lt;span class=&quot;nf&quot;&gt;runTest&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;{&lt;/span&gt;
+    &lt;span class=&quot;kd&quot;&gt;val&lt;/span&gt; &lt;span class=&quot;py&quot;&gt;numberCruncher&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;=&lt;/span&gt; &lt;span class=&quot;nc&quot;&gt;NumberCruncher&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;k&quot;&gt;this&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;coroutineTestRule&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;.&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;testDispatcherProvider&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;)&lt;/span&gt;
+    &lt;span class=&quot;n&quot;&gt;numberCruncher&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;.&lt;/span&gt;&lt;span class=&quot;nf&quot;&gt;calculate&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;()&lt;/span&gt;
+    &lt;span class=&quot;nf&quot;&gt;assertEquals&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;mi&quot;&gt;0&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;numberCruncher&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;.&lt;/span&gt;&lt;span class=&quot;nf&quot;&gt;results&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;().&lt;/span&gt;&lt;span class=&quot;nf&quot;&gt;first&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;())&lt;/span&gt; 
+&lt;span class=&quot;p&quot;&gt;}&lt;/span&gt;
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;This test passes, and passes quickly as it now rightfully skips the &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;delay()&lt;/code&gt;.&lt;/p&gt;
+
+&lt;h3 id=&quot;further-reading&quot;&gt;Further reading&lt;/h3&gt;
+&lt;p&gt;ℹ️ The new tooling offers lots of control over execution of coroutines which isn’t covered in this post. For more details on that if required, you should check out the javadocs for &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;UnconfinedTestDispatcher&lt;/code&gt; and &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;StandardTestDispatcher&lt;/code&gt;, along with functions available inside of the &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;runTest&lt;/code&gt; block to &lt;a href=&quot;https://github.com/Kotlin/kotlinx.coroutines/tree/master/kotlinx-coroutines-test#controlling-the-virtual-time&quot;&gt;control virtual time&lt;/a&gt;.&lt;/p&gt;</content><author><name>Craig Russell</name></author><summary type="html">Testing Android Coroutines using runTest This post describes the latest tooling to help test Android Coroutines, provided as part of the kotlinx.coroutines test libraries, which aim to “provide utilities for efficiently testing coroutines”.</summary></entry><entry><title type="html">Preventing coroutine cancellation for important actions</title><link href="https://cdrussell.github.io//2020/03/preventing-coroutine-cancellation-for-important-actions/" rel="alternate" type="text/html" title="Preventing coroutine cancellation for important actions" /><published>2020-03-11T00:00:00+00:00</published><updated>2020-03-11T00:00:00+00:00</updated><id>https://cdrussell.github.io//2020/03/NonCancellable</id><content type="html" xml:base="https://cdrussell.github.io//2020/03/preventing-coroutine-cancellation-for-important-actions/">&lt;p&gt;&lt;em&gt;This post describes a pattern of launching coroutines which cancel when the Activity or ViewModel is destroyed, but support allowing important parts of the coroutine to run uncancelled.&lt;/em&gt;&lt;/p&gt;
+
+&lt;h1 id=&quot;overview&quot;&gt;Overview&lt;/h1&gt;
+&lt;p&gt;When you have an &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;Activity&lt;/code&gt; and a &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;ViewModel&lt;/code&gt;, you need to pay attention to the scopes in which you launch coroutines. Launching a coroutine from an &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;Activity&lt;/code&gt; will result in it having a different lifecycle than if launched from &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;ViewModel&lt;/code&gt;. And what happens if you have async work that you &lt;em&gt;don’t&lt;/em&gt; want to cancel if the &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;Activity&lt;/code&gt; or &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;ViewModel&lt;/code&gt; are destroyed?&lt;/p&gt;
+
+&lt;p&gt;&lt;img src=&quot;/images/keepcalm.jpg&quot; style=&quot;width:300px; display:block; margin-left: auto; margin-right: auto;&quot; /&gt;&lt;/p&gt;
+
+&lt;h1 id=&quot;existing-architecture&quot;&gt;Existing architecture&lt;/h1&gt;
+&lt;p&gt;In our codebase, we typically marked our &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;ViewModel&lt;/code&gt; functions with &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;suspend&lt;/code&gt; when they would involve asynchronous work, and launched the coroutine from the &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;Activity&lt;/code&gt;. Part of the rationale for this was that it made testing much easier. We knew &lt;a href=&quot;https://craigrussell.io/2019/11/unit-testing-coroutine-suspend-functions-using-testcoroutinedispatcher/&quot;&gt;how to write a test for a suspend function&lt;/a&gt;.&lt;/p&gt;
+
+&lt;p&gt;Let’s consider this example; we have the &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;TabSwitcherActivity&lt;/code&gt; which is used to show users their open tabs and let them switch, add, and close tabs.&lt;/p&gt;
+
+&lt;p&gt;&lt;img src=&quot;/images/tab-switcher.png&quot; alt=&quot;tab switcher view from the DuckDuckGo Privacy Browser&quot; style=&quot;width:300px; display:block; margin-left: auto; margin-right: auto;&quot; /&gt;&lt;/p&gt;
+
+&lt;p&gt;For brevity, let’s just focus on the &lt;em&gt;close tab&lt;/em&gt; functionality.&lt;/p&gt;
+
+&lt;div class=&quot;language-kotlin highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;&lt;span class=&quot;kd&quot;&gt;class&lt;/span&gt; &lt;span class=&quot;nc&quot;&gt;TabSwitcherActivity&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;nc&quot;&gt;CoroutineScope&lt;/span&gt; &lt;span class=&quot;k&quot;&gt;by&lt;/span&gt; &lt;span class=&quot;nc&quot;&gt;MainScope&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;()&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;{&lt;/span&gt;
+ 
+  &lt;span class=&quot;k&quot;&gt;fun&lt;/span&gt; &lt;span class=&quot;nf&quot;&gt;onTabDeleted&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;tab&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;nc&quot;&gt;TabEntity&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;)&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;{&lt;/span&gt;
+    &lt;span class=&quot;nf&quot;&gt;launch&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;{&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;viewModel&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;.&lt;/span&gt;&lt;span class=&quot;nf&quot;&gt;onTabDeleted&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;tab&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;)&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;}&lt;/span&gt;
+  &lt;span class=&quot;p&quot;&gt;}&lt;/span&gt;
+  
+&lt;span class=&quot;p&quot;&gt;}&lt;/span&gt;
+
+&lt;span class=&quot;kd&quot;&gt;class&lt;/span&gt; &lt;span class=&quot;nc&quot;&gt;TabSwitcherViewModel&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;{&lt;/span&gt;
+
+   &lt;span class=&quot;k&quot;&gt;suspend&lt;/span&gt; &lt;span class=&quot;k&quot;&gt;fun&lt;/span&gt; &lt;span class=&quot;nf&quot;&gt;onTabDeleted&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;tab&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;nc&quot;&gt;TabEntity&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;)&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;{&lt;/span&gt;
+      &lt;span class=&quot;n&quot;&gt;tabRepository&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;.&lt;/span&gt;&lt;span class=&quot;nf&quot;&gt;delete&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;tab&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;)&lt;/span&gt;
+   &lt;span class=&quot;p&quot;&gt;}&lt;/span&gt;
+
+&lt;span class=&quot;p&quot;&gt;}&lt;/span&gt;
+
+&lt;span class=&quot;kd&quot;&gt;class&lt;/span&gt; &lt;span class=&quot;nc&quot;&gt;TabRepository&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;{&lt;/span&gt;
+
+   &lt;span class=&quot;k&quot;&gt;suspend&lt;/span&gt; &lt;span class=&quot;k&quot;&gt;fun&lt;/span&gt; &lt;span class=&quot;nf&quot;&gt;delete&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;tab&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;nc&quot;&gt;TabEntity&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;)&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;{&lt;/span&gt;
+      &lt;span class=&quot;nf&quot;&gt;deleteOldPreviewImages&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;tab&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;.&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;tabId&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;)&lt;/span&gt;
+      &lt;span class=&quot;n&quot;&gt;tabsDao&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;.&lt;/span&gt;&lt;span class=&quot;nf&quot;&gt;deleteTabAndUpdateSelection&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;tab&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;)&lt;/span&gt;
+   &lt;span class=&quot;p&quot;&gt;}&lt;/span&gt;
+
+&lt;span class=&quot;p&quot;&gt;}&lt;/span&gt;
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;h2 id=&quot;key-points-to-note&quot;&gt;Key points to note&lt;/h2&gt;
+
+&lt;ul&gt;
+  &lt;li&gt;User chooses to delete a tab from the &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;Activity&lt;/code&gt;&lt;/li&gt;
+  &lt;li&gt;&lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;Activity&lt;/code&gt; launches a coroutine, and calls delete method on &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;ViewModel&lt;/code&gt;&lt;/li&gt;
+  &lt;li&gt;&lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;ViewModel&lt;/code&gt; calls delete method on &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;TabRepository&lt;/code&gt;&lt;/li&gt;
+  &lt;li&gt;&lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;TabRepository&lt;/code&gt; deletes the tab from the database&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;h2 id=&quot;lifecycle-problems&quot;&gt;Lifecycle problems&lt;/h2&gt;
+&lt;p&gt;There is a problem looming here. The reason we are using coroutines at all in this flow is because deleting from the database is an asynchronous operation; it might not happen immediately since it involves disk IO.&lt;/p&gt;
+
+&lt;p&gt;What happens if the user navigates away from the &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;Activity&lt;/code&gt; immediately after hitting the delete button but before the tab is deleted? Consider this sequence 👇&lt;/p&gt;
+
+&lt;p&gt;&lt;img src=&quot;/images/coroutine-cancellation-sad-scenario.svg&quot; /&gt;&lt;/p&gt;
+
+&lt;p&gt;If the Activity is destroyed, the coroutine will be cancelled and we might fail to honor the user’s decision to delete the tab. This is dangerous! ⚠️ If the user thinks the tab will be deleted, we can’t disregard that just because the user hit the back button or rotated their phone.&lt;/p&gt;
+
+&lt;h1 id=&quot;solving-the-lifecyle-problem&quot;&gt;Solving the lifecyle problem&lt;/h1&gt;
+&lt;ol&gt;
+  &lt;li&gt;We could choose to &lt;strong&gt;not cancel&lt;/strong&gt; the coroutine.
+    &lt;ul&gt;
+      &lt;li&gt;This could cause leaks and crashes as code executes on an &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;Activity&lt;/code&gt; which is now destroyed.&lt;/li&gt;
+      &lt;li&gt;This is bad ❌&lt;/li&gt;
+    &lt;/ul&gt;
+  &lt;/li&gt;
+  &lt;li&gt;We could choose to launch a coroutine from the &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;ViewModel&lt;/code&gt; instead of the &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;Activity&lt;/code&gt;.
+    &lt;ul&gt;
+      &lt;li&gt;This moves the coroutine to a longer-lived component, but we haven’t really solved the problem; merely kicked the can further down the road.&lt;/li&gt;
+      &lt;li&gt;If the user navigates back from the tab switcher &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;Activity&lt;/code&gt;, the &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;Activity&lt;/code&gt;, &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;ViewModel&lt;/code&gt; and coroutine will all be destroyed and cancelled and we’ll still fail to honor the user’s action.&lt;/li&gt;
+      &lt;li&gt;This is bad ❌&lt;/li&gt;
+    &lt;/ul&gt;
+  &lt;/li&gt;
+  &lt;li&gt;We could use &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;GlobalScope.launch&lt;/code&gt; from the &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;Repository&lt;/code&gt;.
+    &lt;ul&gt;
+      &lt;li&gt;This would ensure the deletion takes place&lt;/li&gt;
+      &lt;li&gt;However, we’ve now disregarded structured concurrency and won’t be able to tell when the operation has finished from the calling code. If we wanted to show a &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;Snackbar&lt;/code&gt; when the tab was deleted for instance, it would be trickier to achieve with this approach.&lt;/li&gt;
+      &lt;li&gt;This is little better than creating a new &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;Thread&lt;/code&gt; and firing that off to do the deletion. ❌&lt;/li&gt;
+    &lt;/ul&gt;
+  &lt;/li&gt;
+  &lt;li&gt;In the &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;Repository&lt;/code&gt;, we can use &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;NonCancellable&lt;/code&gt; to ensure the deletion cannot be cancelled once started. ✅&lt;/li&gt;
+&lt;/ol&gt;
+
+&lt;h2 id=&quot;introducing---noncancellable-&quot;&gt;Introducing - &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;NonCancellable&lt;/code&gt; ✨&lt;/h2&gt;
+&lt;blockquote&gt;
+  &lt;p&gt;A non-cancelable job that is always active. It is designed for &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;withContext&lt;/code&gt; function to prevent cancellation of code blocks that need to be executed without cancellation.&lt;/p&gt;
+&lt;/blockquote&gt;
+
+&lt;p&gt;Well now, that sounds pretty handy for our scenario. Let’s explore &lt;a href=&quot;https://kotlin.github.io/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines/-non-cancellable.html&quot;&gt;NonCancellable&lt;/a&gt; further, and see what the code looks like for our &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;TabRepository&lt;/code&gt;. As it turns out, it &lt;strong&gt;requires just a tiny change&lt;/strong&gt; to our &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;TabRepository&lt;/code&gt; to get this new behavior.&lt;/p&gt;
+
+&lt;div class=&quot;language-kotlin highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;&lt;span class=&quot;k&quot;&gt;suspend&lt;/span&gt; &lt;span class=&quot;k&quot;&gt;fun&lt;/span&gt; &lt;span class=&quot;nf&quot;&gt;delete&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;tab&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;nc&quot;&gt;TabEntity&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;)&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;{&lt;/span&gt;
+  &lt;span class=&quot;nf&quot;&gt;withContext&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;nc&quot;&gt;Dispatchers&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;.&lt;/span&gt;&lt;span class=&quot;nc&quot;&gt;IO&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;+&lt;/span&gt; &lt;span class=&quot;nc&quot;&gt;NonCancellable&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;)&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;{&lt;/span&gt;
+      &lt;span class=&quot;nf&quot;&gt;deleteTabImagePreview&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;tab&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;)&lt;/span&gt;
+      &lt;span class=&quot;n&quot;&gt;tabsDao&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;.&lt;/span&gt;&lt;span class=&quot;nf&quot;&gt;deleteTab&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;tab&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;)&lt;/span&gt;
+  &lt;span class=&quot;p&quot;&gt;}&lt;/span&gt;
+&lt;span class=&quot;p&quot;&gt;}&lt;/span&gt;
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;h1 id=&quot;summary&quot;&gt;Summary&lt;/h1&gt;
+&lt;p&gt;Within a coroutine, we can mark a block as &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;NonCancellable&lt;/code&gt; to ensure it runs to completion once started.&lt;/p&gt;
+
+&lt;ul&gt;
+  &lt;li&gt;If the &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;Activity&lt;/code&gt; which launched the coroutine is still around, it’ll be able to take action to confirm deletion with the user (e.g., show a &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;Snackbar&lt;/code&gt;)&lt;/li&gt;
+  &lt;li&gt;If the &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;Activity&lt;/code&gt; is destroyed, the coroutine it launched should be cancelled too. However, with &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;NonCancellable&lt;/code&gt;, we ensure that the tab will be deleted (as long as the app itself isn’t killed)&lt;/li&gt;
+  &lt;li&gt;If the &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;Activity&lt;/code&gt; is already dead, nothing in the coroutine after the block marked with &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;NonCancellable&lt;/code&gt; will execute; the refusal to be stopped applies only to code within the block.&lt;/li&gt;
+  &lt;li&gt;It’s all just as testable as before 😌&lt;/li&gt;
+&lt;/ul&gt;</content><author><name>Craig Russell</name></author><category term="Android" /><summary type="html">This post describes a pattern of launching coroutines which cancel when the Activity or ViewModel is destroyed, but support allowing important parts of the coroutine to run uncancelled.</summary></entry><entry><title type="html">Unit Testing Coroutine Suspend Functions using TestCoroutineDispatcher</title><link href="https://cdrussell.github.io//2019/11/unit-testing-coroutine-suspend-functions-using-testcoroutinedispatcher/" rel="alternate" type="text/html" title="Unit Testing Coroutine Suspend Functions using TestCoroutineDispatcher" /><published>2019-11-08T00:00:00+00:00</published><updated>2019-11-08T00:00:00+00:00</updated><id>https://cdrussell.github.io//2019/11/Unit%20Testing%20Coroutine%20Suspend%20Functions</id><content type="html" xml:base="https://cdrussell.github.io//2019/11/unit-testing-coroutine-suspend-functions-using-testcoroutinedispatcher/">&lt;p&gt;&lt;em&gt;Kotlin coroutines provide an elegant way to write asynchronous code, but &lt;strong&gt;sometimes coroutines make it difficult to write unit tests&lt;/strong&gt;.&lt;/em&gt;&lt;/p&gt;
+
+&lt;p&gt;&lt;em&gt;This post describes how to use &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;TestCoroutineDispatcher&lt;/code&gt; to write efficient and stable unit tests for code written with coroutines.&lt;/em&gt;&lt;/p&gt;
+
+&lt;h1 id=&quot;update-2021-12-08&quot;&gt;UPDATE: 2021-12-08&lt;/h1&gt;
+&lt;p&gt;A new recommended way to test coroutines now exists. See &lt;a href=&quot;https://craigrussell.io/2021/12/testing-android-coroutines-using-runtest/&quot;&gt;Testing Coroutines using runTest&lt;/a&gt; for more info on the latest recommended practices for testing coroutines.&lt;/p&gt;
+
+&lt;h2 id=&quot;unit-testing-a-suspend-function&quot;&gt;Unit testing a Suspend function&lt;/h2&gt;
+&lt;p&gt;In order to reliably unit test a &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;suspend&lt;/code&gt; function written with Kotlin Coroutines, there are a few things we need to know.&lt;/p&gt;
+
+&lt;p&gt;At a minimum, we need to know how to build a coroutine from our unit tests and how to make our unit tests wait until all the jobs in the coroutine have finished.&lt;/p&gt;
+
+&lt;p&gt;Ideally beyond that, we will want to know how to make our unit test run as fast as possible, and not sit around waiting for a coroutine &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;delay&lt;/code&gt; to finish.&lt;/p&gt;
+
+&lt;p&gt;This post will describe how to achieve this so you can quickly and reliably unit test &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;suspend&lt;/code&gt; functions.&lt;/p&gt;
+
+&lt;h2 id=&quot;setup&quot;&gt;Setup&lt;/h2&gt;
+&lt;h3 id=&quot;gradle-dependencies&quot;&gt;Gradle Dependencies&lt;/h3&gt;
+&lt;p&gt;We are going to use the &lt;a href=&quot;https://kotlin.github.io/kotlinx.coroutines/kotlinx-coroutines-test/&quot;&gt;&lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;kotlinx-coroutines-test&lt;/code&gt;&lt;/a&gt; library, so we’ll need to add that to our dependendies in &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;build.gradle&lt;/code&gt;.&lt;/p&gt;
+
+&lt;div class=&quot;language-kotlin highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;
+&lt;span class=&quot;nf&quot;&gt;ext&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;{&lt;/span&gt;
+    &lt;span class=&quot;n&quot;&gt;coroutines&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;=&lt;/span&gt; &lt;span class=&quot;s&quot;&gt;&quot;1.3.1&quot;&lt;/span&gt;
+&lt;span class=&quot;p&quot;&gt;}&lt;/span&gt;
+
+&lt;span class=&quot;nf&quot;&gt;dependencies&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;{&lt;/span&gt;
+    &lt;span class=&quot;n&quot;&gt;implementation&lt;/span&gt; &lt;span class=&quot;s&quot;&gt;&quot;org.jetbrains.kotlinx:kotlinx-coroutines-core:$coroutines&quot;&lt;/span&gt;
+    &lt;span class=&quot;n&quot;&gt;implementation&lt;/span&gt; &lt;span class=&quot;s&quot;&gt;&quot;org.jetbrains.kotlinx:kotlinx-coroutines-android:$coroutines&quot;&lt;/span&gt;
+
+    &lt;span class=&quot;c1&quot;&gt;// testImplementation for pure JVM unit tests&lt;/span&gt;
+    &lt;span class=&quot;n&quot;&gt;testImplementation&lt;/span&gt; &lt;span class=&quot;s&quot;&gt;&quot;org.jetbrains.kotlinx:kotlinx-coroutines-test:$coroutines&quot;&lt;/span&gt;
+
+    &lt;span class=&quot;c1&quot;&gt;// androidTestImplementation for Android instrumentation tests&lt;/span&gt;
+    &lt;span class=&quot;n&quot;&gt;androidTestImplementation&lt;/span&gt; &lt;span class=&quot;s&quot;&gt;&quot;org.jetbrains.kotlinx:kotlinx-coroutines-test:$coroutines&quot;&lt;/span&gt;
+&lt;span class=&quot;p&quot;&gt;}&lt;/span&gt;
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;h3 id=&quot;coroutinetestrule&quot;&gt;CoroutineTestRule&lt;/h3&gt;
+&lt;p&gt;Add the following class to your project - it can be included alongside your unit tests.&lt;/p&gt;
+&lt;div class=&quot;language-kotlin highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;
+&lt;span class=&quot;nd&quot;&gt;@ExperimentalCoroutinesApi&lt;/span&gt;
+&lt;span class=&quot;kd&quot;&gt;class&lt;/span&gt; &lt;span class=&quot;nc&quot;&gt;CoroutineTestRule&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;kd&quot;&gt;val&lt;/span&gt; &lt;span class=&quot;py&quot;&gt;testDispatcher&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;nc&quot;&gt;TestCoroutineDispatcher&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;=&lt;/span&gt; &lt;span class=&quot;nc&quot;&gt;TestCoroutineDispatcher&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;())&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;nc&quot;&gt;TestWatcher&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;()&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;{&lt;/span&gt;
+    &lt;span class=&quot;k&quot;&gt;override&lt;/span&gt; &lt;span class=&quot;k&quot;&gt;fun&lt;/span&gt; &lt;span class=&quot;nf&quot;&gt;starting&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;description&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;nc&quot;&gt;Description&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;?)&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;{&lt;/span&gt;
+        &lt;span class=&quot;k&quot;&gt;super&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;.&lt;/span&gt;&lt;span class=&quot;nf&quot;&gt;starting&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;description&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;)&lt;/span&gt;
+        &lt;span class=&quot;nc&quot;&gt;Dispatchers&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;.&lt;/span&gt;&lt;span class=&quot;nf&quot;&gt;setMain&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;testDispatcher&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;)&lt;/span&gt;
+    &lt;span class=&quot;p&quot;&gt;}&lt;/span&gt;
+
+    &lt;span class=&quot;k&quot;&gt;override&lt;/span&gt; &lt;span class=&quot;k&quot;&gt;fun&lt;/span&gt; &lt;span class=&quot;nf&quot;&gt;finished&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;description&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;nc&quot;&gt;Description&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;?)&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;{&lt;/span&gt;
+        &lt;span class=&quot;k&quot;&gt;super&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;.&lt;/span&gt;&lt;span class=&quot;nf&quot;&gt;finished&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;description&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;)&lt;/span&gt;
+        &lt;span class=&quot;nc&quot;&gt;Dispatchers&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;.&lt;/span&gt;&lt;span class=&quot;nf&quot;&gt;resetMain&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;()&lt;/span&gt;
+        &lt;span class=&quot;n&quot;&gt;testDispatcher&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;.&lt;/span&gt;&lt;span class=&quot;nf&quot;&gt;cleanupTestCoroutines&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;()&lt;/span&gt;
+    &lt;span class=&quot;p&quot;&gt;}&lt;/span&gt;
+&lt;span class=&quot;p&quot;&gt;}&lt;/span&gt;
+
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;This class is a unit test rule which watches for tests starting and finishing. It contains a reference to a &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;TestCoroutineDispatcher&lt;/code&gt;, and as tests are starting and stopping it overrides the default &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;Dispatchers.Main&lt;/code&gt; dispatcher and replaces the default with our test dispatcher.&lt;/p&gt;
+
+&lt;h3 id=&quot;apply-the-coroutinetestrule&quot;&gt;Apply the CoroutineTestRule&lt;/h3&gt;
+&lt;p&gt;Apply the unit test rule to your unit test class.&lt;/p&gt;
+
+&lt;div class=&quot;language-kotlin highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;
+&lt;span class=&quot;nd&quot;&gt;@ExperimentalCoroutinesApi&lt;/span&gt;
+&lt;span class=&quot;kd&quot;&gt;class&lt;/span&gt; &lt;span class=&quot;nc&quot;&gt;HeavyWorkerTest&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;{&lt;/span&gt;
+    
+    &lt;span class=&quot;err&quot;&gt;@&lt;/span&gt;&lt;span class=&quot;k&quot;&gt;get&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;:&lt;/span&gt;&lt;span class=&quot;nc&quot;&gt;Rule&lt;/span&gt;
+    &lt;span class=&quot;kd&quot;&gt;var&lt;/span&gt; &lt;span class=&quot;py&quot;&gt;coroutinesTestRule&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;=&lt;/span&gt; &lt;span class=&quot;nc&quot;&gt;CoroutineTestRule&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;()&lt;/span&gt;
+
+    &lt;span class=&quot;c1&quot;&gt;// todo - write some tests&lt;/span&gt;
+&lt;span class=&quot;p&quot;&gt;}&lt;/span&gt;
+
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;h3 id=&quot;onwards&quot;&gt;Onwards&lt;/h3&gt;
+&lt;p&gt;With that setup done, we’re now ready to proceed.&lt;/p&gt;
+
+&lt;h2 id=&quot;unit-testing-a-suspend-function-1&quot;&gt;Unit Testing a Suspend Function&lt;/h2&gt;
+&lt;h3 id=&quot;example&quot;&gt;Example&lt;/h3&gt;
+&lt;p&gt;Let’s take the following &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;HeavyWorker&lt;/code&gt; class as an example. It has a &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;heavyOperation()&lt;/code&gt; function which is &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;suspendable&lt;/code&gt;. Our goal here is to write unit tests for it that are stable and run as quickly as possible.&lt;/p&gt;
+
+&lt;div class=&quot;language-kotlin highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;
+&lt;span class=&quot;kd&quot;&gt;class&lt;/span&gt; &lt;span class=&quot;nc&quot;&gt;HeavyWorker&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;{&lt;/span&gt;
+
+    &lt;span class=&quot;k&quot;&gt;suspend&lt;/span&gt; &lt;span class=&quot;k&quot;&gt;fun&lt;/span&gt; &lt;span class=&quot;nf&quot;&gt;heavyOperation&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;():&lt;/span&gt; &lt;span class=&quot;nc&quot;&gt;Long&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;{&lt;/span&gt;
+        &lt;span class=&quot;k&quot;&gt;return&lt;/span&gt; &lt;span class=&quot;nf&quot;&gt;withContext&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;nc&quot;&gt;Dispatchers&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;.&lt;/span&gt;&lt;span class=&quot;nc&quot;&gt;Default&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;)&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;{&lt;/span&gt;
+            &lt;span class=&quot;k&quot;&gt;return&lt;/span&gt;&lt;span class=&quot;nd&quot;&gt;@withContext&lt;/span&gt; &lt;span class=&quot;nf&quot;&gt;doHardMaths&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;()&lt;/span&gt;
+        &lt;span class=&quot;p&quot;&gt;}&lt;/span&gt;
+    &lt;span class=&quot;p&quot;&gt;}&lt;/span&gt;
+
+    &lt;span class=&quot;c1&quot;&gt;// waste some CPU cycles&lt;/span&gt;
+    &lt;span class=&quot;k&quot;&gt;private&lt;/span&gt; &lt;span class=&quot;k&quot;&gt;fun&lt;/span&gt; &lt;span class=&quot;nf&quot;&gt;doHardMaths&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;():&lt;/span&gt; &lt;span class=&quot;nc&quot;&gt;Long&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;{&lt;/span&gt;
+        &lt;span class=&quot;kd&quot;&gt;var&lt;/span&gt; &lt;span class=&quot;py&quot;&gt;count&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;=&lt;/span&gt; &lt;span class=&quot;mf&quot;&gt;0.0&lt;/span&gt;
+        &lt;span class=&quot;k&quot;&gt;for&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;i&lt;/span&gt; &lt;span class=&quot;k&quot;&gt;in&lt;/span&gt; &lt;span class=&quot;mi&quot;&gt;1&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;..&lt;/span&gt;&lt;span class=&quot;mi&quot;&gt;100_000_000&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;)&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;{&lt;/span&gt;
+            &lt;span class=&quot;n&quot;&gt;count&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;+=&lt;/span&gt; &lt;span class=&quot;nf&quot;&gt;sqrt&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;i&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;.&lt;/span&gt;&lt;span class=&quot;nf&quot;&gt;toDouble&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;())&lt;/span&gt;
+        &lt;span class=&quot;p&quot;&gt;}&lt;/span&gt;
+        &lt;span class=&quot;k&quot;&gt;return&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;count&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;.&lt;/span&gt;&lt;span class=&quot;nf&quot;&gt;toLong&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;()&lt;/span&gt;
+    &lt;span class=&quot;p&quot;&gt;}&lt;/span&gt;
+&lt;span class=&quot;p&quot;&gt;}&lt;/span&gt;
+
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;h3 id=&quot;what-are-my-options&quot;&gt;What are my options?&lt;/h3&gt;
+&lt;p&gt;There are multiple approaches to unit testing a &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;suspend&lt;/code&gt; function. But crucially, since you are calling a &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;suspend&lt;/code&gt; function, you’ll need to use a coroutine builder. There’s a few to choose from:&lt;/p&gt;
+
+&lt;ol&gt;
+  &lt;li&gt;&lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;kotlinx.coroutines.runBlocking&lt;/code&gt; ❌&lt;/li&gt;
+  &lt;li&gt;&lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;kotlinx.coroutines.test.runBlockingTest&lt;/code&gt; ❌&lt;/li&gt;
+  &lt;li&gt;&lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;kotlinx.coroutines.test.TestCoroutineDispatcher.runBlockingTest&lt;/code&gt; ✅&lt;/li&gt;
+&lt;/ol&gt;
+
+&lt;p&gt;🤔 If you’re looking at the three options and wondering why they have such similar names, what the differences are and why they don’t all work, I don’t blame you. It’s confusing! And worse still, some will work for some &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;suspend&lt;/code&gt; functions but not for others.&lt;/p&gt;
+
+&lt;p&gt;Let’s go through each in turn and highlight the problem with that approach before finally explaining why the &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;TestCoroutineDispatcher.runBlockingTest&lt;/code&gt; approach is a good one.&lt;/p&gt;
+
+&lt;h3 id=&quot;runblocking-&quot;&gt;&lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;runBlocking&lt;/code&gt; ❌&lt;/h3&gt;
+&lt;div class=&quot;language-kotlin highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;
+&lt;span class=&quot;nd&quot;&gt;@Test&lt;/span&gt;
+&lt;span class=&quot;k&quot;&gt;fun&lt;/span&gt; &lt;span class=&quot;nf&quot;&gt;useRunBlocking&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;()&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;=&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;runBlocking&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;&amp;lt;&lt;/span&gt;&lt;span class=&quot;nc&quot;&gt;Unit&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;&amp;gt;&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;{&lt;/span&gt;
+   &lt;span class=&quot;kd&quot;&gt;val&lt;/span&gt; &lt;span class=&quot;py&quot;&gt;heavyWorker&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;=&lt;/span&gt; &lt;span class=&quot;nc&quot;&gt;HeavyWorker&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;()&lt;/span&gt;
+   &lt;span class=&quot;kd&quot;&gt;val&lt;/span&gt; &lt;span class=&quot;py&quot;&gt;expected&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;=&lt;/span&gt; &lt;span class=&quot;mi&quot;&gt;666666671666&lt;/span&gt;
+   &lt;span class=&quot;kd&quot;&gt;val&lt;/span&gt; &lt;span class=&quot;py&quot;&gt;result&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;=&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;heavyWorker&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;.&lt;/span&gt;&lt;span class=&quot;nf&quot;&gt;heavyOperation&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;()&lt;/span&gt;
+   &lt;span class=&quot;nf&quot;&gt;assertEquals&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;expected&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;result&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;)&lt;/span&gt;
+&lt;span class=&quot;p&quot;&gt;}&lt;/span&gt;
+
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;In this example, even with the long operation, the unit test will patiently wait for the coroutine’s completion before successfully passing. Depending on your hardware, this might take a few seconds to complete.&lt;/p&gt;
+
+&lt;p&gt;But crucially, it does pass. 🎉&lt;/p&gt;
+
+&lt;p&gt;OK, that was too easy. Let’s make things a bit trickier and see where &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;runBlocking&lt;/code&gt; begins to fail us. Let’s see what happens if the heavy worker code had reason to &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;delay()&lt;/code&gt; for 30 seconds during its execution.&lt;/p&gt;
+
+&lt;div class=&quot;language-kotlin highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;
+&lt;span class=&quot;k&quot;&gt;suspend&lt;/span&gt; &lt;span class=&quot;k&quot;&gt;fun&lt;/span&gt; &lt;span class=&quot;nf&quot;&gt;heavyOperation&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;():&lt;/span&gt; &lt;span class=&quot;nc&quot;&gt;Long&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;{&lt;/span&gt;
+    &lt;span class=&quot;k&quot;&gt;return&lt;/span&gt; &lt;span class=&quot;nf&quot;&gt;withContext&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;nc&quot;&gt;Dispatchers&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;.&lt;/span&gt;&lt;span class=&quot;nc&quot;&gt;Default&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;)&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;{&lt;/span&gt;
+        &lt;span class=&quot;nf&quot;&gt;delay&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;mi&quot;&gt;30_000&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;)&lt;/span&gt;
+        &lt;span class=&quot;k&quot;&gt;return&lt;/span&gt;&lt;span class=&quot;nd&quot;&gt;@withContext&lt;/span&gt; &lt;span class=&quot;nf&quot;&gt;doHardMaths&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;()&lt;/span&gt;
+    &lt;span class=&quot;p&quot;&gt;}&lt;/span&gt;
+&lt;span class=&quot;p&quot;&gt;}&lt;/span&gt;
+
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;In this case, &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;runBlocking&amp;lt;Unit&amp;gt;&lt;/code&gt; waits for the entirety of the &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;delay&lt;/code&gt; period, meaning &lt;strong&gt;your unit test takes an additional 30s to run&lt;/strong&gt; on top of the time it actually takes to crunch the numbers.&lt;/p&gt;
+
+&lt;ul&gt;
+  &lt;li&gt;Unit test still passes 👍&lt;/li&gt;
+  &lt;li&gt;Adds 30s to the unit test execution time 👎&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;h2 id=&quot;runblockingtest-&quot;&gt;runBlockingTest ❌&lt;/h2&gt;
+
+&lt;div class=&quot;language-kotlin highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;
+&lt;span class=&quot;nd&quot;&gt;@Test&lt;/span&gt;
+&lt;span class=&quot;k&quot;&gt;fun&lt;/span&gt; &lt;span class=&quot;nf&quot;&gt;useRunBlockingTest&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;()&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;=&lt;/span&gt; &lt;span class=&quot;nf&quot;&gt;runBlockingTest&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;{&lt;/span&gt;
+    &lt;span class=&quot;kd&quot;&gt;val&lt;/span&gt; &lt;span class=&quot;py&quot;&gt;heavyWorker&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;=&lt;/span&gt; &lt;span class=&quot;nc&quot;&gt;HeavyWorker&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;()&lt;/span&gt;
+    &lt;span class=&quot;kd&quot;&gt;val&lt;/span&gt; &lt;span class=&quot;py&quot;&gt;expected&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;=&lt;/span&gt; &lt;span class=&quot;mi&quot;&gt;666666671666&lt;/span&gt;
+    &lt;span class=&quot;kd&quot;&gt;val&lt;/span&gt; &lt;span class=&quot;py&quot;&gt;result&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;=&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;heavyWorker&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;.&lt;/span&gt;&lt;span class=&quot;nf&quot;&gt;heavyOperation&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;()&lt;/span&gt;
+    &lt;span class=&quot;nf&quot;&gt;assertEquals&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;expected&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;result&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;)&lt;/span&gt;
+&lt;span class=&quot;p&quot;&gt;}&lt;/span&gt;
+
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;&lt;a href=&quot;https://github.com/Kotlin/kotlinx.coroutines/tree/master/kotlinx-coroutines-test#runblockingtest&quot;&gt;&lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;runBlockingTest&lt;/code&gt;&lt;/a&gt; was introduced as a newer coroutine builder than &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;runBlocking&lt;/code&gt;, specifically to help improve in areas such as not having to wait for the full &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;delay&lt;/code&gt; period. Other features listed:&lt;/p&gt;
+
+&lt;ul&gt;
+  &lt;li&gt;Auto-advancing of time for regular suspend functions&lt;/li&gt;
+  &lt;li&gt;Explicit time control for testing multiple coroutines&lt;/li&gt;
+  &lt;li&gt;Eager execution of launch or async code blocks&lt;/li&gt;
+  &lt;li&gt;Pause, manually advance, and restart the execution of coroutines in a test&lt;/li&gt;
+  &lt;li&gt;Report uncaught exceptions as test failures&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;This is all sounding really great, and likely to improve some areas of testing massively. However, it doesn’t work for this code 😢&lt;/p&gt;
+
+&lt;p&gt;Specifically, the test will fail with the following reason:&lt;/p&gt;
+
+&lt;div class=&quot;language-plaintext highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;java.lang.IllegalStateException: This job has not completed yet
+
+at kotlinx.coroutines.JobSupport.getCompletionExceptionOrNull(JobSupport.kt:1128)
+at kotlinx.coroutines.test.TestBuildersKt.runBlockingTest(TestBuilders.kt:53)
+at kotlinx.coroutines.test.TestBuildersKt.runBlockingTest$default(TestBuilders.kt:45)
+at com.cdrussell.coroutines.testing.HeavyWorkerTest.useRunBlockingTest(HeavyWorkerTest.kt:25)
+...
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;&lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;runBlockingTest&lt;/code&gt; is smart enough to realise that you have a job started during your unit testing and that it hasn’t finished yet.&lt;/p&gt;
+
+&lt;p&gt;The fact that the unit test finishes before the invoked &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;Job&lt;/code&gt; finishes is bad. Your unit test which was stable albeit a bit slow using &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;runBlocking&lt;/code&gt; now breaks. That’s not much of an improvement 😞.&lt;/p&gt;
+
+&lt;h3 id=&quot;why-doesnt-this-work-&quot;&gt;Why Doesn’t This Work? 😕&lt;/h3&gt;
+&lt;p&gt;This feels like it &lt;em&gt;should&lt;/em&gt; work, and I don’t know why it doesn’t. Maybe it’s a bug in the current implementation of &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;runBlockingTest&lt;/code&gt;. Maybe I’m trying to get it to do do something it isn’t designed to do. I’ve reached out to some folks who are building this to clarify.&lt;/p&gt;
+
+&lt;p&gt;&lt;strong&gt;UPDATE:&lt;/strong&gt;
+Manuel confirmed that the above example &lt;em&gt;should&lt;/em&gt; work, and indeed, &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;runBlockingTest&lt;/code&gt; should work in all cases where you currently use &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;runBlocking&lt;/code&gt;.&lt;/p&gt;
+
+&lt;div class=&quot;jekyll-twitter-plugin&quot;&gt;&lt;blockquote class=&quot;twitter-tweet&quot; data-width=&quot;500&quot;&gt;&lt;p lang=&quot;en&quot; dir=&quot;ltr&quot;&gt;The expectation is right, it should work. There&amp;#39;s an open issue about this: &lt;a href=&quot;https://t.co/HGDX9XM3NB&quot;&gt;https://t.co/HGDX9XM3NB&lt;/a&gt;&lt;/p&gt;&amp;mdash; Manuel Vivo (@manuelvicnt) &lt;a href=&quot;https://twitter.com/manuelvicnt/status/1193827122357448709?ref_src=twsrc%5Etfw&quot;&gt;November 11, 2019&lt;/a&gt;&lt;/blockquote&gt;
+&lt;script async=&quot;&quot; src=&quot;https://platform.twitter.com/widgets.js&quot; charset=&quot;utf-8&quot;&gt;&lt;/script&gt;
+&lt;/div&gt;
+&lt;div class=&quot;jekyll-twitter-plugin&quot;&gt;&lt;blockquote class=&quot;twitter-tweet&quot; data-width=&quot;500&quot;&gt;&lt;p lang=&quot;en&quot; dir=&quot;ltr&quot;&gt;You&amp;#39;d still need to inject a TCD if a new coroutine gets created in code under test. Moving to a different thread (e.g. using `withContext` in a suspend fun) should pass.&lt;br /&gt;&lt;br /&gt;Basically, it should work for all those cases you currently use `runBlocking`.&lt;/p&gt;&amp;mdash; Manuel Vivo (@manuelvicnt) &lt;a href=&quot;https://twitter.com/manuelvicnt/status/1193831513797922816?ref_src=twsrc%5Etfw&quot;&gt;November 11, 2019&lt;/a&gt;&lt;/blockquote&gt;
+&lt;script async=&quot;&quot; src=&quot;https://platform.twitter.com/widgets.js&quot; charset=&quot;utf-8&quot;&gt;&lt;/script&gt;
+&lt;/div&gt;
+
+&lt;p&gt;Injecting dispatchers shouldn’t be required for this scenario; &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;runBlockingTest&lt;/code&gt; should work on its own. However, injecting dispatchers will still be required when calling a function which launches a coroutine; there will be a follow-up blog post on testing this scenario.&lt;/p&gt;
+
+&lt;p&gt;So watch https://github.com/Kotlin/kotlinx.coroutines/issues/1204 for updates on when that is resolved.&lt;/p&gt;
+
+&lt;h2 id=&quot;testcoroutinedispatcherrunblockingtest-&quot;&gt;TestCoroutineDispatcher.runBlockingTest ✅&lt;/h2&gt;
+&lt;p&gt;This approach is very similar to the one we just tried (and failed) to use, but with a crucial difference; we’ll provide alternative coroutine dispatchers when running in a unit test to those we’d use in production.&lt;/p&gt;
+
+&lt;p&gt;And after providing an alternative coroutine dispatcher, used only when unit testing, we’ll make use of the dispatcher’s &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;runBlockingTest&lt;/code&gt; builder.&lt;/p&gt;
+
+&lt;p&gt;Let’s see what’s required.&lt;/p&gt;
+
+&lt;h3 id=&quot;injecting-our-dispatchers&quot;&gt;Injecting our Dispatchers&lt;/h3&gt;
+&lt;p&gt;The conclusion I’ve drawn is that &lt;strong&gt;we need to inject our dispatchers&lt;/strong&gt;. I tried to find alternatives to doing this, as I don’t love having to inject dispatchers into production code, but I can’t find an alternative; it seems necessary.&lt;/p&gt;
+
+&lt;p&gt;&lt;img src=&quot;/images/always-inject-dispatchers.png&quot; alt=&quot;Image from Android Dev Summit 2019 showing a slide with &amp;quot;You should ALWAYS inject Dispatchers&amp;quot;&quot; /&gt;&lt;/p&gt;
+
+&lt;p&gt;And it seems Sean McQuillan and Manuel Vivo agree ☝️; this was taken from their 2019 Android Dev Summit talk &lt;a href=&quot;https://www.youtube.com/watch?v=KMb0Fs8rCRs&quot;&gt;“Testing Coroutines on Android”&lt;/a&gt;&lt;/p&gt;
+
+&lt;p&gt;What does it mean to inject our dispatchers? Let’s revisit our production code.&lt;/p&gt;
+
+&lt;div class=&quot;language-kotlin highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;
+&lt;span class=&quot;k&quot;&gt;suspend&lt;/span&gt; &lt;span class=&quot;k&quot;&gt;fun&lt;/span&gt; &lt;span class=&quot;nf&quot;&gt;heavyOperation&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;():&lt;/span&gt; &lt;span class=&quot;nc&quot;&gt;Long&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;{&lt;/span&gt;
+    &lt;span class=&quot;k&quot;&gt;return&lt;/span&gt; &lt;span class=&quot;nf&quot;&gt;withContext&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;nc&quot;&gt;Dispatchers&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;.&lt;/span&gt;&lt;span class=&quot;nc&quot;&gt;Default&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;)&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;{&lt;/span&gt;
+        &lt;span class=&quot;k&quot;&gt;return&lt;/span&gt;&lt;span class=&quot;nd&quot;&gt;@withContext&lt;/span&gt; &lt;span class=&quot;nf&quot;&gt;doHardMaths&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;()&lt;/span&gt;
+    &lt;span class=&quot;p&quot;&gt;}&lt;/span&gt;
+&lt;span class=&quot;p&quot;&gt;}&lt;/span&gt;
+
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;We have a hardcoded dispatcher here, &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;Dispatchers.Default&lt;/code&gt;, which cannot be changed. We cannot provide an alternative dispatcher under any condition, not even when unit testing. And it turns out that providing an alternative dispatcher during unit testing is &lt;em&gt;exactly&lt;/em&gt; what we need.&lt;/p&gt;
+
+&lt;p&gt;In order to change the dispatcher that is used when unit testing, we need a way to &lt;em&gt;inject&lt;/em&gt; the dispatcher into our &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;HeavyWorker&lt;/code&gt; production class.&lt;/p&gt;
+
+&lt;h3 id=&quot;dispatcherprovider&quot;&gt;DispatcherProvider&lt;/h3&gt;
+&lt;p&gt;In the example above, we used &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;Dispatchers.Default&lt;/code&gt; but we know there are other common dispatchers that we might encounter. As such, let’s define an interface which will allow classes to obtain whichever dispatcher they require.&lt;/p&gt;
+
+&lt;div class=&quot;language-kotlin highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;
+&lt;span class=&quot;kd&quot;&gt;interface&lt;/span&gt; &lt;span class=&quot;nc&quot;&gt;DispatcherProvider&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;{&lt;/span&gt;
+
+    &lt;span class=&quot;k&quot;&gt;fun&lt;/span&gt; &lt;span class=&quot;nf&quot;&gt;main&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;():&lt;/span&gt; &lt;span class=&quot;nc&quot;&gt;CoroutineDispatcher&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;=&lt;/span&gt; &lt;span class=&quot;nc&quot;&gt;Dispatchers&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;.&lt;/span&gt;&lt;span class=&quot;nc&quot;&gt;Main&lt;/span&gt;
+    &lt;span class=&quot;k&quot;&gt;fun&lt;/span&gt; &lt;span class=&quot;nf&quot;&gt;default&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;():&lt;/span&gt; &lt;span class=&quot;nc&quot;&gt;CoroutineDispatcher&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;=&lt;/span&gt; &lt;span class=&quot;nc&quot;&gt;Dispatchers&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;.&lt;/span&gt;&lt;span class=&quot;nc&quot;&gt;Default&lt;/span&gt;
+    &lt;span class=&quot;k&quot;&gt;fun&lt;/span&gt; &lt;span class=&quot;nf&quot;&gt;io&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;():&lt;/span&gt; &lt;span class=&quot;nc&quot;&gt;CoroutineDispatcher&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;=&lt;/span&gt; &lt;span class=&quot;nc&quot;&gt;Dispatchers&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;.&lt;/span&gt;&lt;span class=&quot;nc&quot;&gt;IO&lt;/span&gt;
+    &lt;span class=&quot;k&quot;&gt;fun&lt;/span&gt; &lt;span class=&quot;nf&quot;&gt;unconfined&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;():&lt;/span&gt; &lt;span class=&quot;nc&quot;&gt;CoroutineDispatcher&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;=&lt;/span&gt; &lt;span class=&quot;nc&quot;&gt;Dispatchers&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;.&lt;/span&gt;&lt;span class=&quot;nc&quot;&gt;Unconfined&lt;/span&gt;
+
+&lt;span class=&quot;p&quot;&gt;}&lt;/span&gt;
+
+&lt;span class=&quot;kd&quot;&gt;class&lt;/span&gt; &lt;span class=&quot;nc&quot;&gt;DefaultDispatcherProvider&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;nc&quot;&gt;DispatcherProvider&lt;/span&gt;
+
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;We define the interface and provide functions for the dispatchers, each of which have a default implementation.&lt;/p&gt;
+
+&lt;ul&gt;
+  &lt;li&gt;&lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;main()&lt;/code&gt; –&amp;gt; &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;Dispatchers.Main&lt;/code&gt;,&lt;/li&gt;
+  &lt;li&gt;&lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;default()&lt;/code&gt; –&amp;gt; &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;Dispatchers.Default&lt;/code&gt;,&lt;/li&gt;
+  &lt;li&gt;&lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;io()&lt;/code&gt; –&amp;gt; &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;Dispatchers.IO&lt;/code&gt;&lt;/li&gt;
+  &lt;li&gt;&lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;unconfined()&lt;/code&gt; –&amp;gt; &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;Dispatchers.Unconfined&lt;/code&gt;&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;Additionally, we define a &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;DefaultDispatcherProvider&lt;/code&gt; default implementation of the interface; this is what we’ll use in our production code.&lt;/p&gt;
+
+&lt;p&gt;In production, we’ll always use this default dispatcher provider, which will always result in using &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;Dispatchers.Main&lt;/code&gt;, &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;Dispatchers.IO&lt;/code&gt;  etc…, and the production behavior will be as it always was.&lt;/p&gt;
+
+&lt;p&gt;In unit testing, however, we will not use this default dispatcher provider; we will provide an alternative version.&lt;/p&gt;
+
+&lt;h3 id=&quot;injecting-dispatcherprovider&quot;&gt;Injecting DispatcherProvider&lt;/h3&gt;
+&lt;p&gt;Now that we have interface defined, we need to modify &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;HeavyWorker&lt;/code&gt; class to make use of the interface instead of fetching the dispatchers in its current hardcoded fashion. To do this, we can inject the interface into the constructor.&lt;/p&gt;
+
+&lt;div class=&quot;language-kotlin highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;&lt;span class=&quot;kd&quot;&gt;class&lt;/span&gt; &lt;span class=&quot;nc&quot;&gt;HeavyWorker&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;k&quot;&gt;private&lt;/span&gt; &lt;span class=&quot;kd&quot;&gt;val&lt;/span&gt; &lt;span class=&quot;py&quot;&gt;dispatchers&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;nc&quot;&gt;DispatcherProvider&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;=&lt;/span&gt; &lt;span class=&quot;nc&quot;&gt;DefaultDispatcherProvider&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;())&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;{&lt;/span&gt;
+
+    &lt;span class=&quot;k&quot;&gt;suspend&lt;/span&gt; &lt;span class=&quot;k&quot;&gt;fun&lt;/span&gt; &lt;span class=&quot;nf&quot;&gt;heavyOperation&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;():&lt;/span&gt; &lt;span class=&quot;nc&quot;&gt;Long&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;{&lt;/span&gt;
+        &lt;span class=&quot;k&quot;&gt;return&lt;/span&gt; &lt;span class=&quot;nf&quot;&gt;withContext&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;dispatchers&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;.&lt;/span&gt;&lt;span class=&quot;nf&quot;&gt;default&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;())&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;{&lt;/span&gt;
+            &lt;span class=&quot;nf&quot;&gt;delay&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;mi&quot;&gt;30_000&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;)&lt;/span&gt;
+            &lt;span class=&quot;k&quot;&gt;return&lt;/span&gt;&lt;span class=&quot;nd&quot;&gt;@withContext&lt;/span&gt; &lt;span class=&quot;nf&quot;&gt;doHardMaths&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;()&lt;/span&gt;
+        &lt;span class=&quot;p&quot;&gt;}&lt;/span&gt;
+    &lt;span class=&quot;p&quot;&gt;}&lt;/span&gt;
+    
+&lt;span class=&quot;p&quot;&gt;}&lt;/span&gt;
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;h4 id=&quot;constructor-parameter&quot;&gt;Constructor parameter&lt;/h4&gt;
+&lt;p&gt;Since you are specifying the default implementation of the provider should be used in production, you never have to actually pass a parameter when instantiating this class in production. &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;HeavyWorker()&lt;/code&gt; is still a valid way to construct the class, just as it was before.&lt;/p&gt;
+
+&lt;h4 id=&quot;no-longer-hardcoding-dispatchers&quot;&gt;No longer hardcoding dispatchers&lt;/h4&gt;
+&lt;p&gt;We no longer hardcode dispatchers to use &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;Dispatchers.Default&lt;/code&gt; and instead use the provided &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;dispatchers.default()&lt;/code&gt;. To be clear, the production behaviour here would use &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;DefaultDispatcherProvider&lt;/code&gt; by default, and therefore no behavioural changes have happened in production 😌.&lt;/p&gt;
+
+&lt;h4 id=&quot;providing-alternative-dispatcher-provider-during-unit-testing&quot;&gt;Providing alternative dispatcher provider during unit testing&lt;/h4&gt;
+&lt;p&gt;We now define an alternative dispatcher provider that we’ll use during unit testing.&lt;/p&gt;
+
+&lt;div class=&quot;language-kotlin highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;
+ &lt;span class=&quot;kd&quot;&gt;val&lt;/span&gt; &lt;span class=&quot;py&quot;&gt;testDispatcherProvider&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;=&lt;/span&gt; &lt;span class=&quot;kd&quot;&gt;object&lt;/span&gt; &lt;span class=&quot;err&quot;&gt;: &lt;/span&gt;&lt;span class=&quot;nc&quot;&gt;DispatcherProvider&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;{&lt;/span&gt;
+    &lt;span class=&quot;k&quot;&gt;override&lt;/span&gt; &lt;span class=&quot;k&quot;&gt;fun&lt;/span&gt; &lt;span class=&quot;nf&quot;&gt;default&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;():&lt;/span&gt; &lt;span class=&quot;nc&quot;&gt;CoroutineDispatcher&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;=&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;testDispatcher&lt;/span&gt;
+    &lt;span class=&quot;k&quot;&gt;override&lt;/span&gt; &lt;span class=&quot;k&quot;&gt;fun&lt;/span&gt; &lt;span class=&quot;nf&quot;&gt;io&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;():&lt;/span&gt; &lt;span class=&quot;nc&quot;&gt;CoroutineDispatcher&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;=&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;testDispatcher&lt;/span&gt;
+    &lt;span class=&quot;k&quot;&gt;override&lt;/span&gt; &lt;span class=&quot;k&quot;&gt;fun&lt;/span&gt; &lt;span class=&quot;nf&quot;&gt;main&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;():&lt;/span&gt; &lt;span class=&quot;nc&quot;&gt;CoroutineDispatcher&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;=&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;testDispatcher&lt;/span&gt;
+    &lt;span class=&quot;k&quot;&gt;override&lt;/span&gt; &lt;span class=&quot;k&quot;&gt;fun&lt;/span&gt; &lt;span class=&quot;nf&quot;&gt;unconfined&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;():&lt;/span&gt; &lt;span class=&quot;nc&quot;&gt;CoroutineDispatcher&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;=&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;testDispatcher&lt;/span&gt;
+&lt;span class=&quot;p&quot;&gt;}&lt;/span&gt;
+
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;You can define this wherever you like so long as it has access to the test dispatcher, but I chose to add it inside the &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;CoroutineTestRule&lt;/code&gt; itself.&lt;/p&gt;
+
+&lt;div class=&quot;language-kotlin highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;&lt;span class=&quot;nd&quot;&gt;@ExperimentalCoroutinesApi&lt;/span&gt;
+&lt;span class=&quot;kd&quot;&gt;class&lt;/span&gt; &lt;span class=&quot;nc&quot;&gt;CoroutineTestRule&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;kd&quot;&gt;val&lt;/span&gt; &lt;span class=&quot;py&quot;&gt;testDispatcher&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;nc&quot;&gt;TestCoroutineDispatcher&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;=&lt;/span&gt; &lt;span class=&quot;nc&quot;&gt;TestCoroutineDispatcher&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;())&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;nc&quot;&gt;TestWatcher&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;()&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;{&lt;/span&gt;
+
+    &lt;span class=&quot;kd&quot;&gt;val&lt;/span&gt; &lt;span class=&quot;py&quot;&gt;testDispatcherProvider&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;=&lt;/span&gt; &lt;span class=&quot;kd&quot;&gt;object&lt;/span&gt; &lt;span class=&quot;err&quot;&gt;: &lt;/span&gt;&lt;span class=&quot;nc&quot;&gt;DispatcherProvider&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;{&lt;/span&gt;
+        &lt;span class=&quot;k&quot;&gt;override&lt;/span&gt; &lt;span class=&quot;k&quot;&gt;fun&lt;/span&gt; &lt;span class=&quot;nf&quot;&gt;default&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;():&lt;/span&gt; &lt;span class=&quot;nc&quot;&gt;CoroutineDispatcher&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;=&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;testDispatcher&lt;/span&gt;
+        &lt;span class=&quot;k&quot;&gt;override&lt;/span&gt; &lt;span class=&quot;k&quot;&gt;fun&lt;/span&gt; &lt;span class=&quot;nf&quot;&gt;io&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;():&lt;/span&gt; &lt;span class=&quot;nc&quot;&gt;CoroutineDispatcher&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;=&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;testDispatcher&lt;/span&gt;
+        &lt;span class=&quot;k&quot;&gt;override&lt;/span&gt; &lt;span class=&quot;k&quot;&gt;fun&lt;/span&gt; &lt;span class=&quot;nf&quot;&gt;main&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;():&lt;/span&gt; &lt;span class=&quot;nc&quot;&gt;CoroutineDispatcher&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;=&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;testDispatcher&lt;/span&gt;
+        &lt;span class=&quot;k&quot;&gt;override&lt;/span&gt; &lt;span class=&quot;k&quot;&gt;fun&lt;/span&gt; &lt;span class=&quot;nf&quot;&gt;unconfined&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;():&lt;/span&gt; &lt;span class=&quot;nc&quot;&gt;CoroutineDispatcher&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;=&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;testDispatcher&lt;/span&gt;
+    &lt;span class=&quot;p&quot;&gt;}&lt;/span&gt;
+
+    &lt;span class=&quot;k&quot;&gt;override&lt;/span&gt; &lt;span class=&quot;k&quot;&gt;fun&lt;/span&gt; &lt;span class=&quot;nf&quot;&gt;starting&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;description&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;nc&quot;&gt;Description&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;?)&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;{&lt;/span&gt;
+        &lt;span class=&quot;k&quot;&gt;super&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;.&lt;/span&gt;&lt;span class=&quot;nf&quot;&gt;starting&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;description&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;)&lt;/span&gt;
+        &lt;span class=&quot;nc&quot;&gt;Dispatchers&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;.&lt;/span&gt;&lt;span class=&quot;nf&quot;&gt;setMain&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;testDispatcher&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;)&lt;/span&gt;
+    &lt;span class=&quot;p&quot;&gt;}&lt;/span&gt;
+
+    &lt;span class=&quot;k&quot;&gt;override&lt;/span&gt; &lt;span class=&quot;k&quot;&gt;fun&lt;/span&gt; &lt;span class=&quot;nf&quot;&gt;finished&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;description&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;nc&quot;&gt;Description&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;?)&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;{&lt;/span&gt;
+        &lt;span class=&quot;k&quot;&gt;super&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;.&lt;/span&gt;&lt;span class=&quot;nf&quot;&gt;finished&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;description&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;)&lt;/span&gt;
+        &lt;span class=&quot;nc&quot;&gt;Dispatchers&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;.&lt;/span&gt;&lt;span class=&quot;nf&quot;&gt;resetMain&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;()&lt;/span&gt;
+        &lt;span class=&quot;n&quot;&gt;testDispatcher&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;.&lt;/span&gt;&lt;span class=&quot;nf&quot;&gt;cleanupTestCoroutines&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;()&lt;/span&gt;
+    &lt;span class=&quot;p&quot;&gt;}&lt;/span&gt;
+&lt;span class=&quot;p&quot;&gt;}&lt;/span&gt;
+
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;h3 id=&quot;writing-the-test&quot;&gt;Writing the test&lt;/h3&gt;
+&lt;div class=&quot;language-kotlin highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;
+&lt;span class=&quot;nd&quot;&gt;@ExperimentalCoroutinesApi&lt;/span&gt;
+&lt;span class=&quot;kd&quot;&gt;class&lt;/span&gt; &lt;span class=&quot;nc&quot;&gt;HeavyWorkerTest&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;{&lt;/span&gt;
+
+    &lt;span class=&quot;err&quot;&gt;@&lt;/span&gt;&lt;span class=&quot;k&quot;&gt;get&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;:&lt;/span&gt;&lt;span class=&quot;nc&quot;&gt;Rule&lt;/span&gt;
+    &lt;span class=&quot;kd&quot;&gt;var&lt;/span&gt; &lt;span class=&quot;py&quot;&gt;coroutinesTestRule&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;=&lt;/span&gt; &lt;span class=&quot;nc&quot;&gt;CoroutineTestRule&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;()&lt;/span&gt;
+
+    &lt;span class=&quot;nd&quot;&gt;@Test&lt;/span&gt;
+    &lt;span class=&quot;k&quot;&gt;fun&lt;/span&gt; &lt;span class=&quot;nf&quot;&gt;useTestCoroutineDispatcherRunBlockingTest&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;()&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;=&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;coroutinesTestRule&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;.&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;testDispatcher&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;.&lt;/span&gt;&lt;span class=&quot;nf&quot;&gt;runBlockingTest&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;{&lt;/span&gt;
+        &lt;span class=&quot;kd&quot;&gt;val&lt;/span&gt; &lt;span class=&quot;py&quot;&gt;heavyWorker&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;=&lt;/span&gt; &lt;span class=&quot;nc&quot;&gt;HeavyWorker&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;coroutinesTestRule&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;.&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;testDispatcherProvider&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;)&lt;/span&gt;
+        &lt;span class=&quot;kd&quot;&gt;val&lt;/span&gt; &lt;span class=&quot;py&quot;&gt;expected&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;=&lt;/span&gt; &lt;span class=&quot;mi&quot;&gt;666666671666&lt;/span&gt;
+        &lt;span class=&quot;kd&quot;&gt;val&lt;/span&gt; &lt;span class=&quot;py&quot;&gt;result&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;=&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;heavyWorker&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;.&lt;/span&gt;&lt;span class=&quot;nf&quot;&gt;heavyOperation&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;()&lt;/span&gt;
+        &lt;span class=&quot;nf&quot;&gt;assertEquals&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;expected&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;result&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;)&lt;/span&gt;
+    &lt;span class=&quot;p&quot;&gt;}&lt;/span&gt;
+
+&lt;span class=&quot;p&quot;&gt;}&lt;/span&gt;
+
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;Note:&lt;/p&gt;
+
+&lt;ul&gt;
+  &lt;li&gt;We use &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;runBlockingTest&lt;/code&gt; that we obtain from the &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;TestCoroutineDispatcher&lt;/code&gt;, which is inside the &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;CoroutineTestRule&lt;/code&gt;.&lt;/li&gt;
+  &lt;li&gt;We pass the &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;testDispatcherProvider&lt;/code&gt; from inside the &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;CoroutineTestRule&lt;/code&gt; to the &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;HeavyWorker&lt;/code&gt;’s constructor.&lt;/li&gt;
+  &lt;li&gt;The test passes ✅&lt;/li&gt;
+  &lt;li&gt;It doesn’t wait 30s for the delay to finish! 🙏&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;Using &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;TestCoroutineDispatcher.runBlockingTest&lt;/code&gt; as our coroutine builder, and injecting the test dispatcher, allows us full control over the coroutine jobs created when unit testing.&lt;/p&gt;
+
+&lt;p&gt;It allows us to achieve the reliability we need, combined with the speed in not having to wait for delays to end.&lt;/p&gt;
+
+&lt;h2 id=&quot;summary&quot;&gt;Summary&lt;/h2&gt;
+&lt;p&gt;In this post, we saw how to write a reliable and fast unit test for code which uses Kotlin coroutines; specifically, how to unit test a &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;suspend&lt;/code&gt; function.&lt;/p&gt;
+
+&lt;p&gt;We saw that:&lt;/p&gt;
+
+&lt;ul&gt;
+  &lt;li&gt;😞 &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;runBlocking&lt;/code&gt; worked for us, but could result in slow tests.&lt;/li&gt;
+  &lt;li&gt;😢 &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;runBlockingTest&lt;/code&gt; didn’t work at all.&lt;/li&gt;
+  &lt;li&gt;😎 &lt;code class=&quot;language-plaintext highlighter-rouge&quot;&gt;TestCoroutineDispatcher.runBlockingTest&lt;/code&gt; worked, so long as we can inject coroutine dispatchers to our class under test.&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;h2 id=&quot;links&quot;&gt;Links&lt;/h2&gt;
+
+&lt;ul&gt;
+  &lt;li&gt;&lt;a href=&quot;https://github.com/CDRussell/testing-coroutines&quot;&gt;Source code&lt;/a&gt;&lt;/li&gt;
+  &lt;li&gt;&lt;a href=&quot;https://www.youtube.com/watch?v=KMb0Fs8rCRs&quot;&gt;Testing Coroutines on Android - Android Dev Summit&lt;/a&gt;&lt;/li&gt;
+  &lt;li&gt;&lt;a href=&quot;https://github.com/Kotlin/kotlinx.coroutines/tree/master/kotlinx-coroutines-test#runblockingtest&quot;&gt;runBlockingTest&lt;/a&gt;&lt;/li&gt;
+  &lt;li&gt;&lt;a href=&quot;https://github.com/Kotlin/kotlinx.coroutines/tree/master/kotlinx-coroutines-test&quot;&gt;kotlinx-coroutines-test&lt;/a&gt;&lt;/li&gt;
+&lt;/ul&gt;</content><author><name>Craig Russell</name></author><category term="Android" /><summary type="html">Kotlin coroutines provide an elegant way to write asynchronous code, but sometimes coroutines make it difficult to write unit tests.</summary></entry></feed>

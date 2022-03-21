@@ -1,0 +1,222 @@
+<!doctype html>
+<html lang="en-US">
+  <head>
+    <meta charset="utf-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+
+<!-- Begin Jekyll SEO tag v2.7.1 -->
+<title>Android WebView — Downloading Images | craigrussell</title>
+<meta name="generator" content="Jekyll v4.2.1" />
+<meta property="og:title" content="Android WebView — Downloading Images" />
+<meta name="author" content="Craig Russell" />
+<meta property="og:locale" content="en_US" />
+<meta name="description" content="How to download an image from a WebView triggered by the user long pressing the image" />
+<meta property="og:description" content="How to download an image from a WebView triggered by the user long pressing the image" />
+<link rel="canonical" href="https://cdrussell.github.io//2018/02/18/android-webview-downloading-images" />
+<meta property="og:url" content="https://cdrussell.github.io//2018/02/18/android-webview-downloading-images" />
+<meta property="og:site_name" content="craigrussell" />
+<meta property="og:type" content="article" />
+<meta property="article:published_time" content="2018-02-18T21:15:00+00:00" />
+<meta name="twitter:card" content="summary" />
+<meta property="twitter:title" content="Android WebView — Downloading Images" />
+<script type="application/ld+json">
+{"description":"How to download an image from a WebView triggered by the user long pressing the image","url":"https://cdrussell.github.io//2018/02/18/android-webview-downloading-images","@type":"BlogPosting","headline":"Android WebView — Downloading Images","dateModified":"2018-02-18T21:15:00+00:00","datePublished":"2018-02-18T21:15:00+00:00","mainEntityOfPage":{"@type":"WebPage","@id":"https://cdrussell.github.io//2018/02/18/android-webview-downloading-images"},"author":{"@type":"Person","name":"Craig Russell"},"@context":"https://schema.org"}</script>
+<!-- End Jekyll SEO tag -->
+
+
+    <link rel="stylesheet" href="/assets/css/style.css?v=">
+    <script src="/assets/js/scale.fix.js"></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+
+    <!--[if lt IE 9]>
+    <script src="//html5shiv.googlecode.com/svn/trunk/html5.js"></script>
+    <![endif]-->
+
+    <!-- start custom head snippets, customize with your own _includes/head-custom.html file -->
+
+<!-- Setup Google Analytics -->
+
+
+
+<!-- You can set your favicon here -->
+<!-- link rel="shortcut icon" type="image/x-icon" href="/favicon.ico" -->
+
+<!-- end custom head snippets -->
+
+  </head>
+  <body>
+    <div class="wrapper">
+      <header >
+        <a href='https://cdrussell.github.io//'>
+          <h1>craigrussell</h1>
+          
+            <p>Technical blog from Craig Russell.</p>
+          
+        </a>
+
+        <nav>
+  <div style="
+         top: 0px;
+         right: 0px;
+         position: absolute">
+
+    <a href="/about">
+      <figure>
+        <img src="/images/me-round.png"
+             style="
+              height: 50px;
+              display: block;
+              margin-left: auto;
+              margin-right: auto;
+              "
+             alt="Photo of me, wearing a bright yellow t-shirt with a bright blue, cloudy sky in the background"
+        />
+        <figcaption style="text-align:justify" >About me</figcaption>
+      </figure>
+    </a>
+  </div>
+</nav>
+
+
+        <p> </p>
+      </header>
+      <section>
+
+      <p><em>This blog post details how to download an image from a WebView which is triggered by the user long pressing on the image.</em></p>
+
+<h1 id="contents">Contents</h1>
+<p>There are a few parts of the problem needing solved</p>
+<ol>
+  <li>Capturing the long press event</li>
+  <li>Identifying if the user has long pressed on an image</li>
+  <li>Naming the image</li>
+  <li>Downloading the image</li>
+</ol>
+
+<h2 id="capturing-the-long-press-event-in-a-webview">Capturing the Long Press Event in a WebView</h2>
+<p>To capture a long press event on a WebView, you need to handle the overridable method in your <code class="language-plaintext highlighter-rouge">Activity</code> subclass called <code class="language-plaintext highlighter-rouge">onCreateContextMenu</code>.</p>
+
+<div class="language-kotlin highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">override</span> <span class="k">fun</span> <span class="nf">onCreateContextMenu</span><span class="p">(</span>
+    <span class="n">menu</span><span class="p">:</span> <span class="nc">ContextMenu</span><span class="p">,</span> <span class="n">view</span><span class="p">:</span> <span class="nc">View</span><span class="p">,</span> <span class="n">menuInfo</span><span class="p">:</span> <span class="nc">ContextMenu</span><span class="p">.</span><span class="nc">ContextMenuInfo</span><span class="p">?</span>
+<span class="p">)</span> <span class="p">{</span> <span class="p">}</span>
+</code></pre></div></div>
+
+<p>This method will be invoked upon the user long pressing on something within the <code class="language-plaintext highlighter-rouge">WebView</code>.</p>
+
+<h2 id="identifying-if-the-user-has-selected-an-image">Identifying if the User has Selected an Image</h2>
+<p>Now that we have a method which is invoked on a long press, we need to determine what the user has actually long pressed on.</p>
+
+<div class="language-kotlin highlighter-rouge"><div class="highlight"><pre class="highlight"><code> <span class="k">override</span> <span class="k">fun</span> <span class="nf">onCreateContextMenu</span><span class="p">(</span><span class="n">menu</span><span class="p">:</span> <span class="nc">ContextMenu</span><span class="p">,</span> <span class="n">view</span><span class="p">:</span> <span class="nc">View</span><span class="p">,</span> <span class="n">menuInfo</span><span class="p">:</span> <span class="nc">ContextMenu</span><span class="p">.</span><span class="nc">ContextMenuInfo</span><span class="p">?)</span> <span class="p">{</span>
+        <span class="n">webView</span><span class="p">.</span><span class="n">hitTestResult</span><span class="o">?.</span><span class="nf">let</span> <span class="p">{</span>
+            <span class="k">when</span> <span class="p">(</span><span class="n">it</span><span class="p">.</span><span class="n">type</span><span class="p">)</span> <span class="p">{</span>
+                <span class="nc">WebView</span><span class="p">.</span><span class="nc">HitTestResult</span><span class="p">.</span><span class="nc">IMAGE_TYPE</span><span class="p">,</span>
+                <span class="nc">WebView</span><span class="p">.</span><span class="nc">HitTestResult</span><span class="p">.</span><span class="nc">SRC_IMAGE_ANCHOR_TYPE</span> <span class="p">-&gt;</span> <span class="p">{</span>
+                    <span class="n">menu</span><span class="p">.</span><span class="nf">setHeaderTitle</span><span class="p">(</span><span class="nc">R</span><span class="p">.</span><span class="n">string</span><span class="p">.</span><span class="n">imageOptions</span><span class="p">)</span>
+                    <span class="n">menu</span><span class="p">.</span><span class="nf">add</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="nc">CONTEXT_MENU_ID_DOWNLOAD_IMAGE</span><span class="p">,</span> <span class="mi">0</span><span class="p">,</span> <span class="nc">R</span><span class="p">.</span><span class="n">string</span><span class="p">.</span><span class="n">downloadImage</span><span class="p">)</span>
+                <span class="p">}</span>
+                <span class="k">else</span> <span class="p">-&gt;</span> <span class="nc">Timber</span><span class="p">.</span><span class="nf">v</span><span class="p">(</span><span class="s">"App does not yet handle target type: ${it.type}"</span><span class="p">)</span>
+            <span class="p">}</span>
+        <span class="p">}</span>
+    <span class="p">}</span>
+</code></pre></div></div>
+<p><em><code class="language-plaintext highlighter-rouge">CONTEXT_MENU_ID_DOWNLOAD_IMAGE</code> is just an int — you will use this soon to determine which menu item the user selected from the context menu</em></p>
+
+<p>We can obtain the <code class="language-plaintext highlighter-rouge">HitTestResult</code> from the <code class="language-plaintext highlighter-rouge">WebView</code> noting that it can be null. We interrogate the type of result to ensure the user has long pressed on an image by limiting hit types to only:</p>
+<ul>
+  <li><code class="language-plaintext highlighter-rouge">WebView.HitTestResult.IMAGE_TYPE</code></li>
+  <li><code class="language-plaintext highlighter-rouge">WebView.HitTestResult.SRC_IMAGE_ANCHOR_TYPE</code></li>
+</ul>
+
+<p>If it is either of these types, we add a menu item to the context menu to give the user the option of downloading the image or not.</p>
+
+<h2 id="network-requests-only">Network Requests Only</h2>
+<p>You might want to add one additional check here to ensure you are dealing with an http or https request.</p>
+
+<p>We can use our good friend <code class="language-plaintext highlighter-rouge">URLUtil</code> to help with that. The method <code class="language-plaintext highlighter-rouge">URLUtil.isNetworkUrl(string)</code> will return true if the URL begins <code class="language-plaintext highlighter-rouge">http://</code> or <code class="language-plaintext highlighter-rouge">https://</code>.</p>
+
+<p>If it isn’t a network URL, we can refuse to add the download image option to the context menu.</p>
+
+<p><img src="/images/webview-download-context-menu.png" alt="Android emulator showing a context menu floating over a WebView with a single selectable option: download image" width="500" style="display: block; margin-left: auto; margin-right: auto;" /></p>
+
+<p>We’ve now added a context menu which lets the user choose to download the image, and so we have to handle the user selecting that context menu item.</p>
+
+<div class="language-kotlin highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">override</span> <span class="k">fun</span> <span class="nf">onContextItemSelected</span><span class="p">(</span><span class="n">item</span><span class="p">:</span> <span class="nc">MenuItem</span><span class="p">):</span> <span class="nc">Boolean</span> <span class="p">{</span>
+    
+    <span class="n">webView</span><span class="p">.</span><span class="n">hitTestResult</span><span class="o">?.</span><span class="nf">let</span> <span class="p">{</span>
+        <span class="kd">val</span> <span class="py">url</span> <span class="p">=</span> <span class="n">it</span><span class="p">.</span><span class="n">extra</span>
+
+        <span class="k">if</span> <span class="p">(</span><span class="nc">CONTEXT_MENU_ID_DOWNLOAD_IMAGE</span> <span class="p">==</span> <span class="n">item</span><span class="p">.</span><span class="n">itemId</span><span class="p">)</span> <span class="p">{</span>
+            <span class="n">pendingFileDownload</span> <span class="p">=</span> <span class="nc">PendingFileDownload</span><span class="p">(</span><span class="n">url</span><span class="p">,</span> <span class="nc">Environment</span><span class="p">.</span><span class="nc">DIRECTORY_PICTURES</span><span class="p">)</span>
+            <span class="nf">downloadFileWithPermissionCheck</span><span class="p">()</span>
+            <span class="k">return</span> <span class="k">true</span>
+        <span class="p">}</span>
+    <span class="p">}</span>
+
+    <span class="k">return</span> <span class="k">super</span><span class="p">.</span><span class="nf">onContextItemSelected</span><span class="p">(</span><span class="n">item</span><span class="p">)</span>
+<span class="p">}</span>
+</code></pre></div></div>
+
+<p>By overriding the <code class="language-plaintext highlighter-rouge">onContextItemSelected</code> menu, we can respond to the user selecting our “Download Image” option from the context menu, using <code class="language-plaintext highlighter-rouge">CONTEXT_MENU_ID_DOWNLOAD_IMAGE</code> that we defined above.</p>
+
+<h2 id="runtime-permissions">Runtime Permissions</h2>
+<p>Can’t forget about those pesky runtime permissions. If you’re planning to download the image to somewhere like <code class="language-plaintext highlighter-rouge">Environment.DIRECTORY_PICTURES</code> in the external storage, you’ll need the user’s permission.</p>
+
+<p>For my app, there’s a chance I haven’t asked for this permission before and so I have to keep a variable which encapsulates what the user is about to download, before possibly segueing down the permission request/response flow. I encapsulate this intention in the <code class="language-plaintext highlighter-rouge">pendingFileDownload</code> variable above.</p>
+
+<div class="language-kotlin highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">private</span> <span class="k">fun</span> <span class="nf">downloadFileWithPermissionCheck</span><span class="p">()</span> <span class="p">{</span>
+     <span class="k">if</span> <span class="p">(</span><span class="nf">hasWriteStoragePermission</span><span class="p">())</span> <span class="p">{</span>
+         <span class="nf">downloadFile</span><span class="p">()</span>
+     <span class="p">}</span> <span class="k">else</span> <span class="p">{</span>
+         <span class="nf">requestStoragePermission</span><span class="p">()</span>
+     <span class="p">}</span>
+<span class="p">}</span>
+</code></pre></div></div>
+
+<p>If I already have the required permissions, I go ahead and instigate the download. Otherwise, I have to ask for the permission first and only upon being granted the permission can I then retrieve the <code class="language-plaintext highlighter-rouge">pendingFileDownload</code> and attempt the download.</p>
+
+<h2 id="naming-the-file">Naming the File</h2>
+<p>In testing, I found that some images on the web downloaded with a sensible file name and others did not. As such, I would recommend manually applying a filename to your download if you cannot fully control which images will be downloaded.</p>
+
+<div class="language-kotlin highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="kd">val</span> <span class="py">guessedFileName</span> <span class="p">=</span> <span class="nc">URLUtil</span><span class="p">.</span><span class="nf">guessFileName</span><span class="p">(</span><span class="n">pending</span><span class="p">.</span><span class="n">url</span><span class="p">,</span> <span class="k">null</span><span class="p">,</span> <span class="k">null</span><span class="p">)</span>
+</code></pre></div></div>
+
+<p>It would be great if there was a utility method which took a String of a URL and tried to guess a suitable filename for it. Oh hello <code class="language-plaintext highlighter-rouge">URLUtil.guessFileName</code> 👋. Glad you could join us. This provides a good guess for the name of the image we are downloading.</p>
+
+<h2 id="downloading-the-file">Downloading the File</h2>
+<p>Now we know that the user has long pressed on an image, we know the location of that image, and we have a sensible filename to use when downloading the image, the only thing left to do is … actually download the image.</p>
+
+<p>One way of doing that is to use the built-in Android <code class="language-plaintext highlighter-rouge">DownloadManager</code>.</p>
+
+<div class="language-kotlin highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">private</span> <span class="k">fun</span> <span class="nf">downloadFile</span><span class="p">()</span> <span class="p">{</span>
+    <span class="kd">val</span> <span class="py">pending</span> <span class="p">=</span> <span class="n">pendingFileDownload</span>
+    <span class="n">pending</span><span class="o">?.</span><span class="nf">let</span> <span class="p">{</span>
+        <span class="kd">val</span> <span class="py">uri</span> <span class="p">=</span> <span class="nc">Uri</span><span class="p">.</span><span class="nf">parse</span><span class="p">(</span><span class="n">pending</span><span class="p">.</span><span class="n">url</span><span class="p">)</span>
+        <span class="kd">val</span> <span class="py">guessedFileName</span> <span class="p">=</span> <span class="nc">URLUtil</span><span class="p">.</span><span class="nf">guessFileName</span><span class="p">(</span><span class="n">pending</span><span class="p">.</span><span class="n">url</span><span class="p">,</span> <span class="k">null</span><span class="p">,</span> <span class="k">null</span><span class="p">)</span>
+        <span class="nc">Timber</span><span class="p">.</span><span class="nf">i</span><span class="p">(</span><span class="s">"Guessed filename of $guessedFileName for url ${pending.url}"</span><span class="p">)</span>
+        <span class="kd">val</span> <span class="py">request</span> <span class="p">=</span> <span class="nc">DownloadManager</span><span class="p">.</span><span class="nc">Request</span><span class="p">(</span><span class="n">uri</span><span class="p">).</span><span class="nf">apply</span> <span class="p">{</span>
+            <span class="nf">allowScanningByMediaScanner</span><span class="p">()</span>
+            <span class="nf">setDestinationInExternalPublicDir</span><span class="p">(</span><span class="n">pending</span><span class="p">.</span><span class="n">directory</span><span class="p">,</span> <span class="n">guessedFileName</span><span class="p">)</span>
+            <span class="nf">setNotificationVisibility</span><span class="p">(</span><span class="nc">VISIBILITY_VISIBLE_NOTIFY_COMPLETED</span><span class="p">)</span>
+        <span class="p">}</span>
+        <span class="kd">val</span> <span class="py">manager</span> <span class="p">=</span> <span class="nf">getSystemService</span><span class="p">(</span><span class="nc">Context</span><span class="p">.</span><span class="nc">DOWNLOAD_SERVICE</span><span class="p">)</span> <span class="k">as</span> <span class="nc">DownloadManager</span>
+        <span class="n">manager</span><span class="p">.</span><span class="nf">enqueue</span><span class="p">(</span><span class="n">request</span><span class="p">)</span>
+        <span class="n">pendingFileDownload</span> <span class="p">=</span> <span class="k">null</span>
+    <span class="p">}</span>
+<span class="p">}</span>
+</code></pre></div></div>
+
+<p>After guessing a filename, we can build a <code class="language-plaintext highlighter-rouge">DownloadManager.Request</code> object which encapsulates what we want to download, and how it should be downloaded.</p>
+
+<p>We pass the request onto the <code class="language-plaintext highlighter-rouge">DownloadManager</code> using its <code class="language-plaintext highlighter-rouge">enqueue()</code> method, and then finally set the <code class="language-plaintext highlighter-rouge">pendingFileDownload</code> to null to indicate we have handled it.</p>
+
+
+<a href='https://cdrussell.github.io//'>Home</a>
+
+
+      </section>
+    </div>
+    <footer>
+    </footer>
+    <!--[if !IE]><script>fixScale(document);</script><![endif]-->
+  </body>
+</html>

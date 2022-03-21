@@ -1,0 +1,211 @@
+<!doctype html>
+<html lang="en-US">
+  <head>
+    <meta charset="utf-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+
+<!-- Begin Jekyll SEO tag v2.7.1 -->
+<title>Kotlin - Beware the Silent Cast | craigrussell</title>
+<meta name="generator" content="Jekyll v4.2.1" />
+<meta property="og:title" content="Kotlin - Beware the Silent Cast" />
+<meta name="author" content="Craig Russell" />
+<meta property="og:locale" content="en_US" />
+<meta name="description" content="Beware a silent cast that can cause unexpected behavior" />
+<meta property="og:description" content="Beware a silent cast that can cause unexpected behavior" />
+<link rel="canonical" href="https://cdrussell.github.io//2017/08/08/Kotlin-Beware-the-silent-cast" />
+<meta property="og:url" content="https://cdrussell.github.io//2017/08/08/Kotlin-Beware-the-silent-cast" />
+<meta property="og:site_name" content="craigrussell" />
+<meta property="og:type" content="article" />
+<meta property="article:published_time" content="2017-08-08T00:00:00+00:00" />
+<meta name="twitter:card" content="summary" />
+<meta property="twitter:title" content="Kotlin - Beware the Silent Cast" />
+<script type="application/ld+json">
+{"description":"Beware a silent cast that can cause unexpected behavior","url":"https://cdrussell.github.io//2017/08/08/Kotlin-Beware-the-silent-cast","@type":"BlogPosting","headline":"Kotlin - Beware the Silent Cast","dateModified":"2017-08-08T00:00:00+00:00","datePublished":"2017-08-08T00:00:00+00:00","mainEntityOfPage":{"@type":"WebPage","@id":"https://cdrussell.github.io//2017/08/08/Kotlin-Beware-the-silent-cast"},"author":{"@type":"Person","name":"Craig Russell"},"@context":"https://schema.org"}</script>
+<!-- End Jekyll SEO tag -->
+
+
+    <link rel="stylesheet" href="/assets/css/style.css?v=">
+    <script src="/assets/js/scale.fix.js"></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+
+    <!--[if lt IE 9]>
+    <script src="//html5shiv.googlecode.com/svn/trunk/html5.js"></script>
+    <![endif]-->
+
+    <!-- start custom head snippets, customize with your own _includes/head-custom.html file -->
+
+<!-- Setup Google Analytics -->
+
+
+
+<!-- You can set your favicon here -->
+<!-- link rel="shortcut icon" type="image/x-icon" href="/favicon.ico" -->
+
+<!-- end custom head snippets -->
+
+  </head>
+  <body>
+    <div class="wrapper">
+      <header >
+        <a href='https://cdrussell.github.io//'>
+          <h1>craigrussell</h1>
+          
+            <p>Technical blog from Craig Russell.</p>
+          
+        </a>
+
+        <nav>
+  <div style="
+         top: 0px;
+         right: 0px;
+         position: absolute">
+
+    <a href="/about">
+      <figure>
+        <img src="/images/me-round.png"
+             style="
+              height: 50px;
+              display: block;
+              margin-left: auto;
+              margin-right: auto;
+              "
+             alt="Photo of me, wearing a bright yellow t-shirt with a bright blue, cloudy sky in the background"
+        />
+        <figcaption style="text-align:justify" >About me</figcaption>
+      </figure>
+    </a>
+  </div>
+</nav>
+
+
+        <p> </p>
+      </header>
+      <section>
+
+      <p><em>Beware a silent cast that can cause unexpected behavior</em></p>
+
+<h1 id="kotlin---beware-the-silent-cast">Kotlin - Beware the Silent Cast</h1>
+
+<h2 id="background">Background</h2>
+<p>Kotlin has a <code class="language-plaintext highlighter-rouge">rangeTo</code> function which uses the operators in and .. and allows you to achieve some nice things with a concise syntax.</p>
+
+<div class="language-kotlin highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="c1">// Define a simple range of numbers, and determine if an input `i` is within that range</span>
+
+<span class="k">if</span> <span class="p">(</span><span class="n">i</span> <span class="k">in</span> <span class="mi">1</span><span class="o">..</span><span class="mi">10</span><span class="p">)</span> <span class="p">{</span>
+    <span class="nf">println</span><span class="p">(</span><span class="s">"$i is within the range of 1-10"</span><span class="p">)</span>
+<span class="p">}</span> <span class="k">else</span> <span class="p">{</span>
+    <span class="nf">println</span><span class="p">(</span><span class="s">"$i is not in range of 1-10"</span><span class="p">)</span>
+<span class="p">}</span>
+</code></pre></div></div>
+
+<p>Here, if we set <code class="language-plaintext highlighter-rouge">val i = 5</code> then we’ll see the output 5 is within the range of 1-10 ; this seems entirely intuitive.</p>
+
+<p>It’s good to check the extremes, too, so setting <code class="language-plaintext highlighter-rouge">val i = 1</code> and <code class="language-plaintext highlighter-rouge">val i = 10</code> also results in it determining that 1 and 10 are both within the range of 1–10 (so both sides of the range are inclusive).</p>
+
+<h2 id="the-problem">The Problem</h2>
+<p>All is working well, so let’s meet the problem. Instead of setting <code class="language-plaintext highlighter-rouge">i</code> to an integer, let’s use a float instead and see what happens.</p>
+
+<p>If we set <code class="language-plaintext highlighter-rouge">val i = 5.5</code> then we’ll see that 5.5 is within the range of 1–10 which is, again, expected.</p>
+
+<p>But what happens if we set the value of i to 10.5? I expect it to tell me that 10.5 is not within range of 1–10.</p>
+
+<div class="language-kotlin highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="kd">val</span> <span class="py">i</span> <span class="p">=</span> <span class="mf">10.5</span>
+
+<span class="k">if</span> <span class="p">(</span><span class="n">i</span> <span class="k">in</span> <span class="mi">1</span><span class="o">..</span><span class="mi">10</span><span class="p">)</span> <span class="p">{</span> 
+    <span class="nf">println</span><span class="p">(</span><span class="s">"$i is within the range of 1-10"</span><span class="p">)</span>
+<span class="p">}</span> <span class="k">else</span> <span class="p">{</span>
+    <span class="nf">println</span><span class="p">(</span><span class="s">"$i is not in range of 1-10"</span><span class="p">)</span>     
+<span class="p">}</span>
+
+<span class="c1">// outputs "10.5 is within the range of 1-10"</span>
+</code></pre></div></div>
+
+<p><code class="language-plaintext highlighter-rouge">val i = 10.5</code> gives the output 10.5 is within the range of 1–10 — uh oh! That’s not right! ❌</p>
+
+<h2 id="the-explanation">The Explanation</h2>
+<p>I’m still new to learning Kotlin and while most things seem entirely intuitive and it does its best not to surprise me; this surprised me. Through further experiment I realised it was silently casting the float 10.5 down to an integer of 10 and therefore passing the range check.</p>
+
+<p>I shared on Twitter and received a few responses from people offering explanations.</p>
+
+<div class="jekyll-twitter-plugin"><blockquote class="twitter-tweet" data-width="500"><p lang="en" dir="ltr">Playing around with <a href="https://twitter.com/hashtag/Kotlin?src=hash&amp;ref_src=twsrc%5Etfw">#Kotlin</a>. First surprise: that this prints true<br /><br />val x = 100.5f<br />val limit = 100<br /><br />if(x in 1..limit) println (&quot;true&quot;)</p>&mdash; Craig Russell (@trionkidnapper) <a href="https://twitter.com/trionkidnapper/status/893846014376935427?ref_src=twsrc%5Etfw">August 5, 2017</a></blockquote>
+<script async="" src="https://platform.twitter.com/widgets.js" charset="utf-8"></script>
+</div>
+
+<p>Thanks to those who helped me understand. I was at the point where I sort of understood why it was doing that; because the range was an <code class="language-plaintext highlighter-rouge">intRange</code> then the input value needed to also be an integer. It sort of makes sense if you know that’s how it works, though it certainly isn’t obvious from looking at just the code above.</p>
+
+<h2 id="plot-twist">Plot Twist</h2>
+<p>Just when I thought I understood the problem and was ready to move on, <a href="https://twitter.com/yogurtearl">Michael Bailey</a> pointed out a further oddity.</p>
+
+<p>The implementation changed, in a breaking way, between Kotlin 1.0.7 and 1.1.3.</p>
+
+<div class="language-kotlin highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="kd">val</span> <span class="py">i</span> <span class="p">=</span> <span class="mf">10.5</span>
+
+<span class="k">if</span> <span class="p">(</span><span class="n">i</span> <span class="k">in</span> <span class="mi">1</span><span class="o">..</span><span class="mi">10</span><span class="p">)</span> <span class="p">{</span> 
+    <span class="nf">println</span><span class="p">(</span><span class="s">"$i is within the range of 1-10"</span><span class="p">)</span>
+<span class="p">}</span> <span class="k">else</span> <span class="p">{</span>
+    <span class="nf">println</span><span class="p">(</span><span class="s">"$i is not in range of 1-10"</span><span class="p">)</span>     
+<span class="p">}</span>
+
+<span class="c1">// outputs "10.5 is not in range of 1-10"</span>
+</code></pre></div></div>
+
+<p>In Kotlin 1.0.7, that actually outputs that 10.5 is not in range, which is what I would expect to happen. But the same code run under Kotlin 1.1.3 results in the opposite, as described above.</p>
+
+<h2 id="source-code">Source Code</h2>
+<p>Digging into the source code helps explain the problem.</p>
+<h3 id="107">1.0.7</h3>
+
+<div class="language-kotlin highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="err">@</span><span class="n">kotlin</span><span class="p">.</span><span class="n">jvm</span><span class="p">.</span><span class="nc">JvmName</span><span class="p">(</span><span class="s">"intRangeContains"</span><span class="p">)</span>
+<span class="k">public</span> <span class="k">operator</span> <span class="k">fun</span> <span class="nf">ClosedRange</span><span class="p">&lt;</span><span class="nc">Int</span><span class="p">&gt;.</span><span class="nf">contains</span><span class="p">(</span><span class="n">value</span><span class="p">:</span> <span class="nc">Float</span><span class="p">):</span> <span class="nc">Boolean</span> <span class="p">{</span>
+    <span class="k">return</span> <span class="n">start</span> <span class="p">&lt;=</span> <span class="n">value</span> <span class="p">&amp;&amp;</span> <span class="n">value</span> <span class="p">&lt;=</span> <span class="n">endInclusive</span>
+<span class="p">}</span>
+</code></pre></div></div>
+
+<p>Here, you can see for an input value of type Float on an Int range, it simply compares the value to see if it is &gt;= the start value and if it is also &lt;= the end value. This is exactly the implementation I was expecting when I was using the range operator in this way.</p>
+
+<h3 id="113">1.1.3</h3>
+<div class="language-kotlin highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="err">@</span><span class="n">kotlin</span><span class="p">.</span><span class="n">jvm</span><span class="p">.</span><span class="nc">JvmName</span><span class="p">(</span><span class="s">"intRangeContains"</span><span class="p">)</span>
+<span class="k">public</span> <span class="k">operator</span> <span class="k">fun</span> <span class="nf">ClosedRange</span><span class="p">&lt;</span><span class="nc">Int</span><span class="p">&gt;.</span><span class="nf">contains</span><span class="p">(</span><span class="n">value</span><span class="p">:</span> <span class="nc">Float</span><span class="p">):</span> <span class="nc">Boolean</span> <span class="p">{</span>
+    <span class="k">return</span> <span class="n">value</span><span class="p">.</span><span class="nf">toIntExactOrNull</span><span class="p">().</span><span class="nf">let</span> <span class="p">{</span> <span class="k">if</span> <span class="p">(</span><span class="n">it</span> <span class="p">!=</span> <span class="k">null</span><span class="p">)</span> <span class="nf">contains</span><span class="p">(</span><span class="n">it</span><span class="p">)</span> <span class="k">else</span> <span class="k">false</span> <span class="p">}</span>
+<span class="p">}</span>
+
+<span class="k">internal</span> <span class="k">fun</span> <span class="nc">Float</span><span class="p">.</span><span class="nf">toIntExactOrNull</span><span class="p">():</span> <span class="nc">Int</span><span class="p">?</span> <span class="p">{</span>
+    <span class="k">return</span> <span class="k">if</span> <span class="p">(</span><span class="k">this</span> <span class="k">in</span> <span class="nc">Int</span><span class="p">.</span><span class="nc">MIN_VALUE</span><span class="p">.</span><span class="nf">toFloat</span><span class="p">()</span><span class="o">..</span><span class="nc">Int</span><span class="p">.</span><span class="nc">MAX_VALUE</span><span class="p">.</span><span class="nf">toFloat</span><span class="p">())</span> <span class="k">this</span><span class="p">.</span><span class="nf">toInt</span><span class="p">()</span> <span class="k">else</span> <span class="k">null</span>
+
+</code></pre></div></div>
+
+<p>With 1.1.3, it silently casts the float to an integer first. This means that 10.5 becomes 10 and then is determined to be in the range.</p>
+
+<p>If you want to try this out for yourself, check out https://try.kotl.in which is an online code playground where you write some Kotlin and get immediate output. It also lets you set the Kotlin version that’ll be used to run the code.</p>
+
+<p>Thanks to Pavlos Petros Tournaris for finding the commit in Kotlin source code where the change was made: <a href="https://github.com/JetBrains/kotlin/commit/5773594412660af11357ac9adc6ffcb45138b840">https://github.com/JetBrains/kotlin/commit/5773594412660af11357ac9adc6ffcb45138b840</a></p>
+
+<h1 id="summary">Summary</h1>
+<p>While I’m assured that Kotlin does its best not to surprise you with silent casts like this, it does happen.</p>
+
+<p>Oddly, it feels like the implementation of 1.0.7 is more intuitive, and simple. With 1.1.3, if it isn’t going to use a float, and instead silently cast to an integer, I feel like the API shouldn’t support the float as input in the first place. This would eliminate the chance for error.</p>
+
+<p>If the float as an input is supported, then it should be honoured, and not silently cast to an integer.</p>
+
+<p>This is a breaking change between Kotlin versions that could easily catch anyone out. If you use the <code class="language-plaintext highlighter-rouge">rangeTo</code> operator in this way, you’d be best sanity checking you aren’t passing it floats as an input value anywhere.</p>
+
+<h1 id="bug-tracker">Bug Tracker</h1>
+<p>Seems like there is already a bug filed for this. It will be interesting to see if it will be marked as intended behaviour or not. <a href="https://youtrack.jetbrains.com/issue/KT-18938">https://youtrack.jetbrains.com/issue/KT-18938</a></p>
+
+<h1 id="links">Links</h1>
+<ul>
+  <li><a href="https://kotlinlang.org/docs/reference/ranges.html">https://kotlinlang.org/docs/reference/ranges.html</a></li>
+  <li><a href="https://try.kotl.in">https://try.kotl.in</a></li>
+</ul>
+
+
+<a href='https://cdrussell.github.io//'>Home</a>
+
+
+      </section>
+    </div>
+    <footer>
+    </footer>
+    <!--[if !IE]><script>fixScale(document);</script><![endif]-->
+  </body>
+</html>

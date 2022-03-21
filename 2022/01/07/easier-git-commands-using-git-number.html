@@ -1,0 +1,158 @@
+<!doctype html>
+<html lang="en-US">
+  <head>
+    <meta charset="utf-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+
+<!-- Begin Jekyll SEO tag v2.7.1 -->
+<title>Easier git commands using git-number | craigrussell</title>
+<meta name="generator" content="Jekyll v4.2.1" />
+<meta property="og:title" content="Easier git commands using git-number" />
+<meta name="author" content="Craig Russell" />
+<meta property="og:locale" content="en_US" />
+<meta name="description" content="Easier git commands using git-number, which can be used to number each file listed in git commands for a quicker way to choose files" />
+<meta property="og:description" content="Easier git commands using git-number, which can be used to number each file listed in git commands for a quicker way to choose files" />
+<link rel="canonical" href="https://cdrussell.github.io//2022/01/07/easier-git-commands-using-git-number" />
+<meta property="og:url" content="https://cdrussell.github.io//2022/01/07/easier-git-commands-using-git-number" />
+<meta property="og:site_name" content="craigrussell" />
+<meta property="og:type" content="article" />
+<meta property="article:published_time" content="2022-01-07T23:16:00+00:00" />
+<meta name="twitter:card" content="summary" />
+<meta property="twitter:title" content="Easier git commands using git-number" />
+<script type="application/ld+json">
+{"description":"Easier git commands using git-number, which can be used to number each file listed in git commands for a quicker way to choose files","url":"https://cdrussell.github.io//2022/01/07/easier-git-commands-using-git-number","@type":"BlogPosting","headline":"Easier git commands using git-number","dateModified":"2022-01-07T23:16:00+00:00","datePublished":"2022-01-07T23:16:00+00:00","mainEntityOfPage":{"@type":"WebPage","@id":"https://cdrussell.github.io//2022/01/07/easier-git-commands-using-git-number"},"author":{"@type":"Person","name":"Craig Russell"},"@context":"https://schema.org"}</script>
+<!-- End Jekyll SEO tag -->
+
+
+    <link rel="stylesheet" href="/assets/css/style.css?v=">
+    <script src="/assets/js/scale.fix.js"></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+
+    <!--[if lt IE 9]>
+    <script src="//html5shiv.googlecode.com/svn/trunk/html5.js"></script>
+    <![endif]-->
+
+    <!-- start custom head snippets, customize with your own _includes/head-custom.html file -->
+
+<!-- Setup Google Analytics -->
+
+
+
+<!-- You can set your favicon here -->
+<!-- link rel="shortcut icon" type="image/x-icon" href="/favicon.ico" -->
+
+<!-- end custom head snippets -->
+
+  </head>
+  <body>
+    <div class="wrapper">
+      <header >
+        <a href='https://cdrussell.github.io//'>
+          <h1>craigrussell</h1>
+          
+            <p>Technical blog from Craig Russell.</p>
+          
+        </a>
+
+        <nav>
+  <div style="
+         top: 0px;
+         right: 0px;
+         position: absolute">
+
+    <a href="/about">
+      <figure>
+        <img src="/images/me-round.png"
+             style="
+              height: 50px;
+              display: block;
+              margin-left: auto;
+              margin-right: auto;
+              "
+             alt="Photo of me, wearing a bright yellow t-shirt with a bright blue, cloudy sky in the background"
+        />
+        <figcaption style="text-align:justify" >About me</figcaption>
+      </figure>
+    </a>
+  </div>
+</nav>
+
+
+        <p> </p>
+      </header>
+      <section>
+
+      <p><em>This post describes <code class="language-plaintext highlighter-rouge">git-number</code> which can be used to number each file listed in git commands for a quicker way to choose files.</em></p>
+
+<p>If you work with git on the command line, you’ll be used to seeing the output of <code class="language-plaintext highlighter-rouge">git status</code>. e.g.,</p>
+
+<div class="language-shell highlighter-rouge"><div class="highlight"><pre class="highlight"><code>cdrussell.github.io % git status                                                                                                    main <span class="o">(</span>cdrussell.github.io<span class="o">)</span>
+On branch main
+Your branch is ahead of <span class="s1">'origin/main'</span> by 1 commit.
+  <span class="o">(</span>use <span class="s2">"git push"</span> to publish your <span class="nb">local </span>commits<span class="o">)</span>
+
+Changes not staged <span class="k">for </span>commit:
+  <span class="o">(</span>use <span class="s2">"git add &lt;file&gt;..."</span> to update what will be committed<span class="o">)</span>
+  <span class="o">(</span>use <span class="s2">"git restore &lt;file&gt;..."</span> to discard changes <span class="k">in </span>working directory<span class="o">)</span>
+        modified:   _posts/2016-08-10-SSH-Keys-with-Multiple-GitHub-Accounts-c67db56f191e.md
+        modified:   _posts/2018-03-21-Recycler View and ListAdapter, More Animations and Less Code.md
+        modified:   _posts/2022-01-07-easier-git-commands-using-git-number.md
+</code></pre></div></div>
+
+<p>If you want to add these files you need to run <code class="language-plaintext highlighter-rouge">git add</code>, and for each you have to provide the filename. Sometimes you can regex to make this easier, and sometimes you might be adding everything, but other times you need to choose individual files and it’s a pain to have to provide this full name each time. e.g.,</p>
+
+<div class="language-shell highlighter-rouge"><div class="highlight"><pre class="highlight"><code>git add _posts/2016-08-10-SSH-Keys-with-Multiple-GitHub-Accounts-c67db56f191e.md  
+git add _posts/2018-03-21-Recycler View and ListAdapter, More Animations and Less Code.md
+git add _posts/2022-01-07-easier-git-commands-using-git-number.md
+</code></pre></div></div>
+
+<p><em>Tedious</em>. Enter <code class="language-plaintext highlighter-rouge">git-number</code>.</p>
+
+<h2 id="what-git-number-does">What git-number does</h2>
+<p><code class="language-plaintext highlighter-rouge">git-number</code> will number each file and allow you to use just that number in future git commands instead of having to type out the full filename.</p>
+
+<p>Let’s run <code class="language-plaintext highlighter-rouge">git-number status</code>.</p>
+
+<div class="language-shell highlighter-rouge"><div class="highlight"><pre class="highlight"><code>cdrussell.github.io % git-number                                                                                                            main <span class="o">(</span>cdrussell.github.io<span class="o">)</span>
+On branch main
+Your branch is ahead of <span class="s1">'origin/main'</span> by 1 commit.
+  <span class="o">(</span>use <span class="s2">"git push"</span> to publish your <span class="nb">local </span>commits<span class="o">)</span>
+
+Changes not staged <span class="k">for </span>commit:
+  <span class="o">(</span>use <span class="s2">"git add &lt;file&gt;..."</span> to update what will be committed<span class="o">)</span>
+  <span class="o">(</span>use <span class="s2">"git restore &lt;file&gt;..."</span> to discard changes <span class="k">in </span>working directory<span class="o">)</span>
+1       modified:   _posts/2016-08-10-SSH-Keys-with-Multiple-GitHub-Accounts-c67db56f191e.md
+2       modified:   _posts/2018-03-21-Recycler View and ListAdapter, More Animations and Less Code.md
+3       modified:   _posts/2022-01-07-easier-git-commands-using-git-number.md
+</code></pre></div></div>
+
+<p>It’s a subtle difference, but you’ll see each file is numbered on the left-hand side.</p>
+
+<p>To add the files now, we can provide the number instead of the full filename. e.g.,</p>
+
+<div class="language-shell highlighter-rouge"><div class="highlight"><pre class="highlight"><code>git-number add 1
+git add _posts/2016-08-10-SSH-Keys-with-Multiple-GitHub-Accounts-c67db56f191e.md 
+</code></pre></div></div>
+
+<p>☝️ Both of these commands do the same thing. Which would you rather type? You can also alias <code class="language-plaintext highlighter-rouge">git-number</code> to something quicker to type.</p>
+
+<h2 id="installing-git-number">Installing git-number</h2>
+<p><code class="language-plaintext highlighter-rouge">brew install git-number</code></p>
+
+<h2 id="further-reading">Further reading</h2>
+<ul>
+  <li>See <a href="https://github.com/holygeek/git-number">Official GitHub page</a> for more info.</li>
+  <li><a href="https://jkl.gg/b/git-number/">git-number to the command line rescue</a> by <a href="https://twitter.com/kaushikgopal">Kaushik Gopal</a>, which has more details and is where I discovered that this tool exists.</li>
+</ul>
+
+
+<a href='https://cdrussell.github.io//'>Home</a>
+
+
+      </section>
+    </div>
+    <footer>
+    </footer>
+    <!--[if !IE]><script>fixScale(document);</script><![endif]-->
+  </body>
+</html>

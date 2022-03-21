@@ -1,0 +1,166 @@
+<!doctype html>
+<html lang="en-US">
+  <head>
+    <meta charset="utf-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+
+<!-- Begin Jekyll SEO tag v2.7.1 -->
+<title>Launching a Kotlin Coroutine for immediate execution on the Main thread | craigrussell</title>
+<meta name="generator" content="Jekyll v4.2.1" />
+<meta property="og:title" content="Launching a Kotlin Coroutine for immediate execution on the Main thread" />
+<meta name="author" content="Craig Russell" />
+<meta property="og:locale" content="en_US" />
+<meta name="description" content="If you launch a coroutine using launch(Dispatchers.Main) while already on the main thread, will the code execute immediately?" />
+<meta property="og:description" content="If you launch a coroutine using launch(Dispatchers.Main) while already on the main thread, will the code execute immediately?" />
+<link rel="canonical" href="https://medium.com/@trionkidnapper/launching-a-kotlin-coroutine-for-immediate-execution-on-the-main-thread-8555e701163b" />
+<meta property="og:url" content="https://medium.com/@trionkidnapper/launching-a-kotlin-coroutine-for-immediate-execution-on-the-main-thread-8555e701163b" />
+<meta property="og:site_name" content="craigrussell" />
+<meta property="og:type" content="article" />
+<meta property="article:published_time" content="2019-02-15T21:14:36+00:00" />
+<meta name="twitter:card" content="summary" />
+<meta property="twitter:title" content="Launching a Kotlin Coroutine for immediate execution on the Main thread" />
+<script type="application/ld+json">
+{"description":"If you launch a coroutine using launch(Dispatchers.Main) while already on the main thread, will the code execute immediately?","url":"https://medium.com/@trionkidnapper/launching-a-kotlin-coroutine-for-immediate-execution-on-the-main-thread-8555e701163b","@type":"BlogPosting","headline":"Launching a Kotlin Coroutine for immediate execution on the Main thread","dateModified":"2019-02-15T21:14:36+00:00","datePublished":"2019-02-15T21:14:36+00:00","mainEntityOfPage":{"@type":"WebPage","@id":"https://medium.com/@trionkidnapper/launching-a-kotlin-coroutine-for-immediate-execution-on-the-main-thread-8555e701163b"},"author":{"@type":"Person","name":"Craig Russell"},"@context":"https://schema.org"}</script>
+<!-- End Jekyll SEO tag -->
+
+
+    <link rel="stylesheet" href="/assets/css/style.css?v=">
+    <script src="/assets/js/scale.fix.js"></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+
+    <!--[if lt IE 9]>
+    <script src="//html5shiv.googlecode.com/svn/trunk/html5.js"></script>
+    <![endif]-->
+
+    <!-- start custom head snippets, customize with your own _includes/head-custom.html file -->
+
+<!-- Setup Google Analytics -->
+
+
+
+<!-- You can set your favicon here -->
+<!-- link rel="shortcut icon" type="image/x-icon" href="/favicon.ico" -->
+
+<!-- end custom head snippets -->
+
+  </head>
+  <body>
+    <div class="wrapper">
+      <header >
+        <a href='https://cdrussell.github.io//'>
+          <h1>craigrussell</h1>
+          
+            <p>Technical blog from Craig Russell.</p>
+          
+        </a>
+
+        <nav>
+  <div style="
+         top: 0px;
+         right: 0px;
+         position: absolute">
+
+    <a href="/about">
+      <figure>
+        <img src="/images/me-round.png"
+             style="
+              height: 50px;
+              display: block;
+              margin-left: auto;
+              margin-right: auto;
+              "
+             alt="Photo of me, wearing a bright yellow t-shirt with a bright blue, cloudy sky in the background"
+        />
+        <figcaption style="text-align:justify" >About me</figcaption>
+      </figure>
+    </a>
+  </div>
+</nav>
+
+
+        <p> </p>
+      </header>
+      <section>
+
+      <p>If you launch a coroutine using <code class="language-plaintext highlighter-rouge">launch(Dispatchers.Main)</code> while already on the main thread, will the code execute immediately?</p>
+
+<p><em>No</em>, is the short answer. This post explains <em>why</em>.</p>
+
+<p>Consider the following code. As this is the <code class="language-plaintext highlighter-rouge">onCreate</code> function of an <code class="language-plaintext highlighter-rouge">Activity</code>, we know it is running on the main thread.</p>
+
+<div class="language-kotlin highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="k">override</span> <span class="k">fun</span> <span class="nf">onCreate</span><span class="p">(</span><span class="n">savedInstanceState</span><span class="p">:</span> <span class="nc">Bundle</span><span class="p">?)</span> <span class="p">{</span>
+    <span class="k">super</span><span class="p">.</span><span class="nf">onCreate</span><span class="p">(</span><span class="n">savedInstanceState</span><span class="p">)</span>
+
+    <span class="nf">launch</span><span class="p">(</span><span class="nc">Dispatchers</span><span class="p">.</span><span class="nc">Main</span><span class="p">)</span> <span class="p">{</span>
+        <span class="nf">log</span><span class="p">(</span><span class="s">"A"</span><span class="p">)</span>
+    <span class="p">}</span>
+
+    <span class="nf">log</span><span class="p">(</span><span class="s">"B"</span><span class="p">)</span>
+<span class="p">}</span>
+</code></pre></div></div>
+
+<p>We expect that two things will be printed to the logs; “A” and “B”. But in which order?</p>
+
+<p><strong>OUTPUT:</strong></p>
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>// B  
+// A
+</code></pre></div></div>
+
+<p>Does it surprise you that it prints “B” first? It surprised me.</p>
+
+<h3 id="why-thishappens">Why This Happens</h3>
+
+<p>The answer lies here: <a href="https://kotlin.github.io/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines/-coroutine-dispatcher/is-dispatch-needed.html"><code class="language-plaintext highlighter-rouge">CoroutineDispatcher.isDispatchNeeded()</code></a></p>
+
+<blockquote>
+  <p>Returns <code class="language-plaintext highlighter-rouge">true</code> if execution shall be dispatched onto another thread. The default behaviour for most dispatchers is to return <code class="language-plaintext highlighter-rouge">true</code>.</p>
+</blockquote>
+
+<p>OK, that makes sense. Each dispatcher can choose if execution should happen on another thread or not. And the default is for it to be <code class="language-plaintext highlighter-rouge">true</code>. But what about a UI dispatcher like <code class="language-plaintext highlighter-rouge">Dispatchers.Main</code>? Shouldn’t it return <code class="language-plaintext highlighter-rouge">false</code> so that a coroutine is executed immediately if already on the main thread? Wouldn’t that be more efficient?</p>
+
+<p>Turns out… yes, that would be more efficient but even so, no, it shouldn’t do that.</p>
+
+<blockquote>
+  <p>UI dispatchers <em>should not</em> override <code class="language-plaintext highlighter-rouge">isDispatchNeeded</code>, but leave a default implementation that returns <code class="language-plaintext highlighter-rouge">true</code>.</p>
+</blockquote>
+
+<p>The <code class="language-plaintext highlighter-rouge">Main</code> dispatcher <em>could</em> check if it was already running on the main thread and, if it were, execute the code immediately instead of queuing it up. However, as the documentation for that method highlights, this could introduce pernicious bugs which are hard to debug.</p>
+
+<p>If a background thread called the code, it would execute <em>asynchronously</em>, but if it were called on the main thread it would execute <em>synchronously</em>. That’s not going to be easy to debug if something goes wrong because of it.</p>
+
+<h3 id="if-not-immediately-when">If Not Immediately, When?</h3>
+
+<p>We can see it doesn’t execute immediately; so when exactly does it execute? Under the hood, the Main dispatcher uses a <code class="language-plaintext highlighter-rouge">Handler</code> to post a <code class="language-plaintext highlighter-rouge">Runnable</code> to the <code class="language-plaintext highlighter-rouge">MessageQueue</code>. Basically, it’ll get added to the end of the event queue.</p>
+
+<p>This means it will execute <em>soon</em>, but not <em>immediately</em>. Hence why “B” gets printed before “A”.</p>
+
+<h3 id="executing-immediately">Executing Immediately</h3>
+
+<p>What if you do need it to execute immediately? For this, you can use <a href="https://kotlin.github.io/kotlinx.coroutines/kotlinx-coroutines-core/kotlinx.coroutines/-main-coroutine-dispatcher/immediate.html"><code class="language-plaintext highlighter-rouge">Dispatchers.Main.immediate</code></a></p>
+
+<blockquote>
+  <p>Executes coroutines immediately when it is already in the right context</p>
+</blockquote>
+
+<p>In other words, if your code is called from the main thread and you use this dispatcher, it will execute immediately.</p>
+
+<p><strong>OUTPUT</strong>:</p>
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>// A  
+// B
+</code></pre></div></div>
+
+<p>If this introduces subtle bugs into your code, well, you can’t blame coroutines for that. By making the default behaviour <em>safe</em>, they protect against accidentally introducing unexpected behaviour. If it’s really the behaviour you want though, you can have it, but you have to be explicit about it.</p>
+
+<p>ℹ️ <code class="language-plaintext highlighter-rouge">Dispatchers.Main.immediate</code> is currently marked as <em>experimental.</em></p>
+
+
+<a href='https://cdrussell.github.io//'>Home</a>
+
+
+      </section>
+    </div>
+    <footer>
+    </footer>
+    <!--[if !IE]><script>fixScale(document);</script><![endif]-->
+  </body>
+</html>

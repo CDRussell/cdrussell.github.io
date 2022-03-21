@@ -1,0 +1,207 @@
+<!doctype html>
+<html lang="en-US">
+  <head>
+    <meta charset="utf-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+
+<!-- Begin Jekyll SEO tag v2.7.1 -->
+<title>Coroutine Support in ViewModels using the new ViewModelScope Extension Property | craigrussell</title>
+<meta name="generator" content="Jekyll v4.2.1" />
+<meta property="og:title" content="Coroutine Support in ViewModels using the new ViewModelScope Extension Property" />
+<meta name="author" content="Craig Russell" />
+<meta property="og:locale" content="en_US" />
+<meta name="description" content="How to use Coroutines in ViewModels, making use of the new ViewModelScope extension property. This allows coroutines to be cancelled automatically when the ViewModel is being cleared." />
+<meta property="og:description" content="How to use Coroutines in ViewModels, making use of the new ViewModelScope extension property. This allows coroutines to be cancelled automatically when the ViewModel is being cleared." />
+<link rel="canonical" href="https://cdrussell.github.io//2019/03/coroutine-support-in-viewmodels-using-the-new-viewmodelscope-extension-property/" />
+<meta property="og:url" content="https://cdrussell.github.io//2019/03/coroutine-support-in-viewmodels-using-the-new-viewmodelscope-extension-property/" />
+<meta property="og:site_name" content="craigrussell" />
+<meta property="og:type" content="article" />
+<meta property="article:published_time" content="2019-03-05T00:00:00+00:00" />
+<meta name="twitter:card" content="summary" />
+<meta property="twitter:title" content="Coroutine Support in ViewModels using the new ViewModelScope Extension Property" />
+<script type="application/ld+json">
+{"description":"How to use Coroutines in ViewModels, making use of the new ViewModelScope extension property. This allows coroutines to be cancelled automatically when the ViewModel is being cleared.","url":"https://cdrussell.github.io//2019/03/coroutine-support-in-viewmodels-using-the-new-viewmodelscope-extension-property/","@type":"BlogPosting","headline":"Coroutine Support in ViewModels using the new ViewModelScope Extension Property","dateModified":"2019-03-05T00:00:00+00:00","datePublished":"2019-03-05T00:00:00+00:00","mainEntityOfPage":{"@type":"WebPage","@id":"https://cdrussell.github.io//2019/03/coroutine-support-in-viewmodels-using-the-new-viewmodelscope-extension-property/"},"author":{"@type":"Person","name":"Craig Russell"},"@context":"https://schema.org"}</script>
+<!-- End Jekyll SEO tag -->
+
+
+    <link rel="stylesheet" href="/assets/css/style.css?v=">
+    <script src="/assets/js/scale.fix.js"></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+
+    <!--[if lt IE 9]>
+    <script src="//html5shiv.googlecode.com/svn/trunk/html5.js"></script>
+    <![endif]-->
+
+    <!-- start custom head snippets, customize with your own _includes/head-custom.html file -->
+
+<!-- Setup Google Analytics -->
+
+
+
+<!-- You can set your favicon here -->
+<!-- link rel="shortcut icon" type="image/x-icon" href="/favicon.ico" -->
+
+<!-- end custom head snippets -->
+
+  </head>
+  <body>
+    <div class="wrapper">
+      <header >
+        <a href='https://cdrussell.github.io//'>
+          <h1>craigrussell</h1>
+          
+            <p>Technical blog from Craig Russell.</p>
+          
+        </a>
+
+        <nav>
+  <div style="
+         top: 0px;
+         right: 0px;
+         position: absolute">
+
+    <a href="/about">
+      <figure>
+        <img src="/images/me-round.png"
+             style="
+              height: 50px;
+              display: block;
+              margin-left: auto;
+              margin-right: auto;
+              "
+             alt="Photo of me, wearing a bright yellow t-shirt with a bright blue, cloudy sky in the background"
+        />
+        <figcaption style="text-align:justify" >About me</figcaption>
+      </figure>
+    </a>
+  </div>
+</nav>
+
+
+        <p> </p>
+      </header>
+      <section>
+
+      <p><em>This post describes how to use <code class="language-plaintext highlighter-rouge">Coroutines</code> in <code class="language-plaintext highlighter-rouge">ViewModels</code>, making use of the new <code class="language-plaintext highlighter-rouge">ViewModelScope</code> extension property. This allows coroutines to be cancelled automatically when the <code class="language-plaintext highlighter-rouge">ViewModel</code> is being cleared.</em></p>
+
+<h1 id="overview">Overview</h1>
+<p>As of <a href="https://developer.android.com/jetpack/androidx/releases/lifecycle#2.1.0-alpha01">lifecycle 2.1.0-alpha01</a>, there is now easy support for coroutines in <code class="language-plaintext highlighter-rouge">ViewModels</code>, using an extension property called <code class="language-plaintext highlighter-rouge">ViewModel.viewModelScope</code>.</p>
+
+<h1 id="example">Example</h1>
+<p><code class="language-plaintext highlighter-rouge">viewModelScope</code> is likely best explained by starting with an example. Let’s imagine we are following the standard Android Architecture Components setup, and we have a <code class="language-plaintext highlighter-rouge">ViewModel</code> which extends <code class="language-plaintext highlighter-rouge">androidx.lifecycle.ViewModel</code></p>
+
+<h2 id="existing-setup">Existing Setup</h2>
+
+<p>If you wanted to make use of coroutines from your <code class="language-plaintext highlighter-rouge">ViewModel</code>, you might currently do something like this:</p>
+
+<div class="language-kotlin highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="kd">class</span> <span class="nc">LoginViewModel</span> <span class="p">:</span> <span class="nc">ViewModel</span><span class="p">(),</span> <span class="nc">CoroutineScope</span> <span class="p">{</span>
+
+  <span class="c1">// Define job and coroutine context  </span>
+  <span class="k">private</span> <span class="kd">val</span> <span class="py">job</span> <span class="p">=</span> <span class="nc">SupervisorJob</span><span class="p">()</span>
+  <span class="k">override</span> <span class="kd">val</span> <span class="py">coroutineContext</span><span class="p">:</span> <span class="nc">CoroutineContext</span>
+      <span class="k">get</span><span class="p">()</span> <span class="p">=</span> <span class="n">job</span> <span class="p">+</span> <span class="nc">Dispatchers</span><span class="p">.</span><span class="nc">Main</span>
+
+  <span class="c1">// cancel the job when the Activity is being destroyed for good</span>
+  <span class="k">override</span> <span class="k">fun</span> <span class="nf">onCleared</span><span class="p">()</span> <span class="p">{</span>
+      <span class="k">super</span><span class="p">.</span><span class="nf">onCleared</span><span class="p">()</span>
+      <span class="n">job</span><span class="p">.</span><span class="nf">cancel</span><span class="p">()</span>
+  <span class="p">}</span>
+
+  <span class="k">fun</span> <span class="nf">onUserDoingAThing</span><span class="p">()</span> <span class="p">{</span>
+      <span class="nf">launch</span> <span class="p">{</span>
+        <span class="c1">// get your work done</span>
+      <span class="p">}</span>
+  <span class="p">}</span>
+
+<span class="p">}</span>
+
+</code></pre></div></div>
+
+<p>By doing this, you would be able to use <code class="language-plaintext highlighter-rouge">launch{ }</code> inside the <code class="language-plaintext highlighter-rouge">ViewModel</code> to run coroutines.</p>
+
+<p>By overriding the <code class="language-plaintext highlighter-rouge">onCleared()</code> function, you can cancel the coroutine job to ensure you aren’t continuing to do work that is no longer necessary.</p>
+
+<p>Hopefully this looks fairly familiar to you, and you largely understand why all the code is needed.</p>
+
+<p>Now, let’s look at the new way of doing it and let’s see what code we can remove while keeping the same functionality.</p>
+
+<h2 id="new-setup-using-viewmodelscope">New Setup Using ViewModelScope</h2>
+<div class="language-kotlin highlighter-rouge"><div class="highlight"><pre class="highlight"><code>
+<span class="kd">class</span> <span class="nc">LoginViewModel</span> <span class="p">:</span> <span class="nc">ViewModel</span><span class="p">()</span> <span class="p">{</span>    
+
+  <span class="k">fun</span> <span class="nf">onUserDoingAThing</span><span class="p">()</span> <span class="p">{</span>
+      <span class="n">viewModelScope</span><span class="p">.</span><span class="nf">launch</span> <span class="p">{</span>
+        <span class="c1">// get your work done</span>
+      <span class="p">}</span>
+  <span class="p">}</span>
+
+<span class="p">}</span>
+
+</code></pre></div></div>
+
+<p>Wait… where did all the code go? It just isn’t needed! 🎉</p>
+
+<h3 id="no-longer-need-to-implement-coroutinescope">No longer need to implement <code class="language-plaintext highlighter-rouge">CoroutineScope</code></h3>
+<p>It’s no longer required that you specify that your <code class="language-plaintext highlighter-rouge">ViewModel</code> implements <code class="language-plaintext highlighter-rouge">CoroutineScope</code>. You can use <code class="language-plaintext highlighter-rouge">viewModelScope</code> which is already available inside your <code class="language-plaintext highlighter-rouge">ViewModel</code>.</p>
+
+<p>Any time you want to launch a coroutine, therefore, you can use <code class="language-plaintext highlighter-rouge">viewModelScope.launch { }</code>.</p>
+
+<p>Note, by default it will run the coroutine on <code class="language-plaintext highlighter-rouge">Dispatchers.Main</code>, but you can override that as normal to use any dispatcher. For example, <code class="language-plaintext highlighter-rouge">viewModelScope.launch(Dispatchers.IO) { }</code>.</p>
+
+<h3 id="no-longer-need-to-define-a-job">No longer need to define a <code class="language-plaintext highlighter-rouge">Job</code></h3>
+<p>You no longer have to create a job to use for cancellation. The latest <code class="language-plaintext highlighter-rouge">ViewModel</code> already comes equipped under the hood with a <code class="language-plaintext highlighter-rouge">SupervisorJob</code> which is likely what you want for this scenario anyway.</p>
+
+<p>Use of a <code class="language-plaintext highlighter-rouge">SupervisorJob</code> means that you can launch multiple coroutines and have it so that one failing will not affect any of the others.</p>
+
+<blockquote>
+  <blockquote>
+    <p><em>A failure or cancellation of a child does not cause the supervisor job to fail and does not affect its other children</em></p>
+  </blockquote>
+</blockquote>
+
+<h3 id="no-longer-need-to-override-oncleared-function-and-cancel-the-job">No longer need to override <code class="language-plaintext highlighter-rouge">onCleared()</code> function and cancel the job</h3>
+<p>Job cancellation now happens automatically when the <code class="language-plaintext highlighter-rouge">onCleared()</code> function is called.</p>
+
+<p>ℹ️ As a reminder, this <strong>is not called</strong> when the <code class="language-plaintext highlighter-rouge">Activity</code> is being destroyed during a configuration change, such as the user rotating their device.</p>
+
+<p>However, it is called when the <code class="language-plaintext highlighter-rouge">Activity</code> is being destroyed for good, such as when the user hits the back button to navigate away from the <code class="language-plaintext highlighter-rouge">Activity</code>.</p>
+
+<h1 id="looks-great-how-do-i-get-it">Looks Great! How Do I Get It?</h1>
+<p><code class="language-plaintext highlighter-rouge">viewModelScope</code> was added in <code class="language-plaintext highlighter-rouge">2.1.0-alpha01</code> of the lifecycle extensions dependency, so make sure you have at least that version in your <code class="language-plaintext highlighter-rouge">build.gradle</code> file, and make sure your project is configured for using coroutines.</p>
+
+<p>For example:</p>
+
+<div class="language-plaintext highlighter-rouge"><div class="highlight"><pre class="highlight"><code>implementation "androidx.lifecycle:lifecycle-viewmodel-ktx:2.1.0-alpha02"
+implementation "androidx.lifecycle:lifecycle-extensions:2.1.0-alpha02"
+annotationProcessor "androidx.lifecycle:lifecycle-compiler:2.1.0-alpha02"
+implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-core:1.1.1'
+implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-android:1.1.1'
+</code></pre></div></div>
+
+<h1 id="summary">Summary</h1>
+<p>You can now use coroutines in your <code class="language-plaintext highlighter-rouge">ViewModels</code> with the minimum of effort. The Architecture Components libraries will now give you a very sensible default setup without writing any code at all.</p>
+
+<p>Note, if your work isn’t tied to a particular screen and should continue even if the user navigates away, this isn’t what you should be using; you should be using something with a lifecycle that isn’t tied to the screen.</p>
+
+<p>Coroutines that are tied to a particular screen, however, can now be launched easily, and cancelled automatically when the screen is going away.</p>
+
+<h1 id="links">Links</h1>
+<p><a href="https://developer.android.com/jetpack/androidx/releases/lifecycle#2.1.0-alpha01">AndroidX Lifecycle Release Notes</a></p>
+
+<h2 id="thanks">Thanks</h2>
+
+<p><em>The original article was ahead of its time in suggesting a <code class="language-plaintext highlighter-rouge">SupervisorJob</code> was used under the hood; at the time of writing it was using <code class="language-plaintext highlighter-rouge">Job</code>; thanks to <a href="https://twitter.com/fabioCollini">@fabioCollini</a> and <a href="https://twitter.com/geoffreymetais">@geoffreymetais</a> for correcting me.</em></p>
+
+<p><em>Since publishing, it has now changed to use the <code class="language-plaintext highlighter-rouge">SupervisorJob</code> which always felt like the best choice. Thanks to <a href="https://twitter.com/sindrenm">@sindrenm</a> for letting me know they’d updated it.</em></p>
+
+
+<a href='https://cdrussell.github.io//'>Home</a>
+
+
+      </section>
+    </div>
+    <footer>
+    </footer>
+    <!--[if !IE]><script>fixScale(document);</script><![endif]-->
+  </body>
+</html>

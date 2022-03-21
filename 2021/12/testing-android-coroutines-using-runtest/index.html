@@ -1,0 +1,419 @@
+<!doctype html>
+<html lang="en-US">
+  <head>
+    <meta charset="utf-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+
+<!-- Begin Jekyll SEO tag v2.7.1 -->
+<title>Testing Android Coroutines using runTest | craigrussell</title>
+<meta name="generator" content="Jekyll v4.2.1" />
+<meta property="og:title" content="Testing Android Coroutines using runTest" />
+<meta name="author" content="Craig Russell" />
+<meta property="og:locale" content="en_US" />
+<meta name="description" content="The latest tooling to help test Android Coroutines, provided as part of the kotlinx.coroutines test libraries, which aim to “provide utilities for efficiently testing coroutines”." />
+<meta property="og:description" content="The latest tooling to help test Android Coroutines, provided as part of the kotlinx.coroutines test libraries, which aim to “provide utilities for efficiently testing coroutines”." />
+<link rel="canonical" href="https://cdrussell.github.io//2021/12/testing-android-coroutines-using-runtest/" />
+<meta property="og:url" content="https://cdrussell.github.io//2021/12/testing-android-coroutines-using-runtest/" />
+<meta property="og:site_name" content="craigrussell" />
+<meta property="og:type" content="article" />
+<meta property="article:published_time" content="2021-12-07T01:05:00+00:00" />
+<meta name="twitter:card" content="summary" />
+<meta property="twitter:title" content="Testing Android Coroutines using runTest" />
+<script type="application/ld+json">
+{"description":"The latest tooling to help test Android Coroutines, provided as part of the kotlinx.coroutines test libraries, which aim to “provide utilities for efficiently testing coroutines”.","url":"https://cdrussell.github.io//2021/12/testing-android-coroutines-using-runtest/","@type":"BlogPosting","headline":"Testing Android Coroutines using runTest","dateModified":"2021-12-07T01:05:00+00:00","datePublished":"2021-12-07T01:05:00+00:00","mainEntityOfPage":{"@type":"WebPage","@id":"https://cdrussell.github.io//2021/12/testing-android-coroutines-using-runtest/"},"author":{"@type":"Person","name":"Craig Russell"},"@context":"https://schema.org"}</script>
+<!-- End Jekyll SEO tag -->
+
+
+    <link rel="stylesheet" href="/assets/css/style.css?v=">
+    <script src="/assets/js/scale.fix.js"></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+
+    <!--[if lt IE 9]>
+    <script src="//html5shiv.googlecode.com/svn/trunk/html5.js"></script>
+    <![endif]-->
+
+    <!-- start custom head snippets, customize with your own _includes/head-custom.html file -->
+
+<!-- Setup Google Analytics -->
+
+
+
+<!-- You can set your favicon here -->
+<!-- link rel="shortcut icon" type="image/x-icon" href="/favicon.ico" -->
+
+<!-- end custom head snippets -->
+
+  </head>
+  <body>
+    <div class="wrapper">
+      <header >
+        <a href='https://cdrussell.github.io//'>
+          <h1>craigrussell</h1>
+          
+            <p>Technical blog from Craig Russell.</p>
+          
+        </a>
+
+        <nav>
+  <div style="
+         top: 0px;
+         right: 0px;
+         position: absolute">
+
+    <a href="/about">
+      <figure>
+        <img src="/images/me-round.png"
+             style="
+              height: 50px;
+              display: block;
+              margin-left: auto;
+              margin-right: auto;
+              "
+             alt="Photo of me, wearing a bright yellow t-shirt with a bright blue, cloudy sky in the background"
+        />
+        <figcaption style="text-align:justify" >About me</figcaption>
+      </figure>
+    </a>
+  </div>
+</nav>
+
+
+        <p> </p>
+      </header>
+      <section>
+
+      <h1 id="testing-android-coroutines-using-runtest">Testing Android Coroutines using runTest</h1>
+<p><em>This post describes the latest tooling to help test Android Coroutines, provided as part of the <code class="language-plaintext highlighter-rouge">kotlinx.coroutines</code> test libraries, which aim to “provide utilities for efficiently testing coroutines”.</em></p>
+
+<p><em>This blog post covers how to test the following scenarios involving coroutines:</em></p>
+<ol>
+  <li><em>Writing a unit test for code that calls a suspend function</em></li>
+  <li><em>Writing a unit test for code that launches a new coroutine internally</em></li>
+</ol>
+
+<h1 id="overview">Overview</h1>
+<p>Testing code which creates or uses coroutines has always been a challenge in Android. There have been a few official tools and libraries provided previously which sort of worked, but came with challenges and gotchas. Now, as of around December 2021, we have a new contender to simplify testing coroutines.</p>
+
+<h1 id="kotlinx-coroutines-test-module">kotlinx-coroutines-test Module</h1>
+<p>A module specifically to improve testing coroutines and code which interacts with coroutines. The <a href="https://github.com/Kotlin/kotlinx.coroutines/tree/master/kotlinx-coroutines-test">official docs</a> are definitely worth reading, and this blog post serves to complement them with additional explanations as to why they’re needed.</p>
+
+<h2 id="add-dependencies">Add Dependencies</h2>
+<p>Add one or both of the <strong>test</strong> dependencies below to get started, depending on whether you run JVM-based unit tests, instrumentation tests or both. These should be added to your <code class="language-plaintext highlighter-rouge">build.gradle</code> file.</p>
+
+<div class="language-groovy highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="n">dependencies</span> <span class="o">{</span>
+    
+    <span class="c1">// JVM-based unit tests (that don't need a real device or emulator)</span>
+    <span class="n">testImplementation</span> <span class="s2">"org.jetbrains.kotlinx:kotlinx-coroutines-test:1.6.0-RC"</span>
+    
+    <span class="c1">// Instrumentation unit tests (that will require a real device or emulator)</span>
+    <span class="n">androidTestImplementation</span> <span class="s2">"org.jetbrains.kotlinx:kotlinx-coroutines-test:1.6.0-RC"</span>
+    
+    <span class="c1">// Coroutines, and the much-recommended library to add lifecycle-awareness to coroutines</span>
+    <span class="n">implementation</span> <span class="s2">"org.jetbrains.kotlinx:kotlinx-coroutines-android:1.5.2"</span>
+    <span class="n">implementation</span> <span class="s2">"androidx.lifecycle:lifecycle-runtime-ktx:2.4.0"</span>
+    
+<span class="o">}</span>
+</code></pre></div></div>
+
+<h1 id="example-code-using-coroutines">Example Code using Coroutines</h1>
+
+<p>Let’s pretend we have a class which does some hard work. This class adds a lot of numbers to a list, and sorts and shuffles them over and over for a while, before returning the first number of the sorted list, which is always 0. But really that’s not important here; what is important is that it does too much work to be called on the main thread.</p>
+
+<div class="language-kotlin highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="kd">class</span> <span class="nc">NumberCruncher</span> <span class="p">{</span>
+
+    <span class="k">fun</span> <span class="nf">getResult</span><span class="p">():</span> <span class="nc">Int</span> <span class="p">{</span>
+        <span class="k">return</span> <span class="nf">longRunningOperation</span><span class="p">()</span>
+    <span class="p">}</span>
+
+    <span class="k">private</span> <span class="k">fun</span> <span class="nf">longRunningOperation</span><span class="p">():</span> <span class="nc">Int</span> <span class="p">{</span>
+        <span class="kd">val</span> <span class="py">list</span> <span class="p">=</span> <span class="n">mutableListOf</span><span class="p">&lt;</span><span class="nc">Int</span><span class="p">&gt;()</span>
+
+        <span class="k">for</span> <span class="p">(</span><span class="n">i</span> <span class="k">in</span> <span class="mi">0</span><span class="o">..</span><span class="mi">1_000</span><span class="p">)</span> <span class="p">{</span>
+            <span class="n">list</span><span class="p">.</span><span class="nf">add</span><span class="p">(</span><span class="n">i</span><span class="p">)</span>
+        <span class="p">}</span>
+        <span class="k">for</span> <span class="p">(</span><span class="n">i</span> <span class="k">in</span> <span class="mi">0</span><span class="o">..</span><span class="mi">20_000</span><span class="p">)</span> <span class="p">{</span>
+            <span class="n">list</span><span class="p">.</span><span class="nf">shuffle</span><span class="p">()</span>
+            <span class="n">list</span><span class="p">.</span><span class="nf">sort</span><span class="p">()</span>
+        <span class="p">}</span>
+
+        <span class="k">return</span> <span class="n">list</span><span class="p">.</span><span class="nf">first</span><span class="p">()</span>
+    <span class="p">}</span>
+<span class="p">}</span>
+</code></pre></div></div>
+
+<p>We have a simple <code class="language-plaintext highlighter-rouge">Activity</code> containing a <code class="language-plaintext highlighter-rouge">TextView</code> and a <code class="language-plaintext highlighter-rouge">Button</code>. When the button is pressed, the <code class="language-plaintext highlighter-rouge">TextView</code> will show a temporary <code class="language-plaintext highlighter-rouge">calculating...</code> message, and then the <code class="language-plaintext highlighter-rouge">TextView</code> will show the result.</p>
+
+<p><img src="/images/coroutine-runTest-activity.png" alt="Screenshot of the activity described above" height="600" /></p>
+
+<div class="language-kotlin highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="kd">class</span> <span class="nc">MainActivity</span> <span class="p">:</span> <span class="nc">AppCompatActivity</span><span class="p">()</span> <span class="p">{</span>
+
+    <span class="c1">// UI references</span>
+    <span class="k">private</span> <span class="k">lateinit</span> <span class="kd">var</span> <span class="py">resultTextView</span><span class="p">:</span> <span class="nc">TextView</span>
+    <span class="k">private</span> <span class="k">lateinit</span> <span class="kd">var</span> <span class="py">calculateButton</span><span class="p">:</span> <span class="nc">Button</span>
+
+    <span class="c1">// class which does a lot of hard work</span>
+    <span class="k">private</span> <span class="kd">val</span> <span class="py">numberCruncher</span> <span class="p">=</span> <span class="nc">NumberCruncher</span><span class="p">()</span>
+
+    <span class="k">override</span> <span class="k">fun</span> <span class="nf">onCreate</span><span class="p">(</span><span class="n">savedInstanceState</span><span class="p">:</span> <span class="nc">Bundle</span><span class="p">?)</span> <span class="p">{</span>
+        <span class="k">super</span><span class="p">.</span><span class="nf">onCreate</span><span class="p">(</span><span class="n">savedInstanceState</span><span class="p">)</span>
+        <span class="nf">setContentView</span><span class="p">(</span><span class="nc">R</span><span class="p">.</span><span class="n">layout</span><span class="p">.</span><span class="n">activity_main</span><span class="p">)</span>
+        <span class="n">resultTextView</span> <span class="p">=</span> <span class="nf">findViewById</span><span class="p">(</span><span class="nc">R</span><span class="p">.</span><span class="n">id</span><span class="p">.</span><span class="n">resultTextView</span><span class="p">)</span>
+        <span class="n">calculateButton</span> <span class="p">=</span> <span class="nf">findViewById</span><span class="p">(</span><span class="nc">R</span><span class="p">.</span><span class="n">id</span><span class="p">.</span><span class="n">calculateButton</span><span class="p">)</span>
+
+        <span class="n">calculateButton</span><span class="p">.</span><span class="nf">setOnClickListener</span> <span class="p">{</span>
+            <span class="n">resultTextView</span><span class="p">.</span><span class="n">text</span> <span class="p">=</span> <span class="nf">getText</span><span class="p">(</span><span class="nc">R</span><span class="p">.</span><span class="n">string</span><span class="p">.</span><span class="n">calculating</span><span class="p">)</span>
+            <span class="kd">val</span> <span class="py">result</span> <span class="p">=</span> <span class="n">numberCruncher</span><span class="p">.</span><span class="nf">getResult</span><span class="p">()</span>
+            <span class="n">resultTextView</span><span class="p">.</span><span class="n">text</span> <span class="p">=</span> <span class="nc">String</span><span class="p">.</span><span class="nf">format</span><span class="p">(</span><span class="s">"Got result %d"</span><span class="p">,</span> <span class="n">result</span><span class="p">)</span>
+        <span class="p">}</span>
+    <span class="p">}</span>
+<span class="p">}</span>
+</code></pre></div></div>
+
+<h2 id="adding-coroutines-into-the-example">Adding coroutines into the example</h2>
+<p>If we try to call that code as is, the UI will completely freeze as we try to do too much work from the main thread. Let’s modify <code class="language-plaintext highlighter-rouge">NumberCruncher</code> to make use of coroutines so that it delegates the CPU-intensive work to another thread.</p>
+
+<div class="language-kotlin highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="kd">class</span> <span class="nc">NumberCruncher</span> <span class="p">{</span>
+
+    <span class="k">suspend</span> <span class="k">fun</span> <span class="nf">getResult</span><span class="p">():</span> <span class="nc">Int</span> <span class="p">{</span>
+        <span class="k">return</span> <span class="nf">withContext</span><span class="p">(</span><span class="nc">Dispatchers</span><span class="p">.</span><span class="nc">Default</span><span class="p">)</span> <span class="p">{</span>
+            <span class="nf">longRunningOperation</span><span class="p">()</span>
+        <span class="p">}</span>
+    <span class="p">}</span>
+
+    <span class="c1">// function body hidden as it's the same as before. We won't change this function at all in this blog post.  </span>
+    <span class="k">private</span> <span class="k">fun</span> <span class="nf">longRunningOperation</span><span class="p">():</span> <span class="nc">Int</span> <span class="p">{</span><span class="o">..</span><span class="p">.}</span>
+<span class="p">}</span>
+</code></pre></div></div>
+<p>We’ve made <code class="language-plaintext highlighter-rouge">getResult()</code> a <code class="language-plaintext highlighter-rouge">suspend</code> function, and ensured the heavy CPU work is done away from the main thread using <code class="language-plaintext highlighter-rouge">withContext(Dispatchers.Default)</code>. When we run the app now, we can see the UI does not freeze, and we can see the temporary <code class="language-plaintext highlighter-rouge">calculating...</code> message. Huzzah! But let’s not celebrate too quickly; we’ve still got to write unit tests for our <code class="language-plaintext highlighter-rouge">NumberCruncher</code> class.</p>
+
+<h1 id="writing-a-unit-test-for-code-that-calls-a-suspend-function">Writing a unit test for code that calls a suspend function</h1>
+
+<h2 id="attempt-1-not-using-coroutines-">Attempt 1, not using coroutines ❌</h2>
+
+<div class="language-kotlin highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="kd">class</span> <span class="nc">NumberCruncherTest</span> <span class="p">{</span>
+    
+    <span class="k">private</span> <span class="kd">val</span> <span class="py">numberCruncher</span> <span class="p">=</span> <span class="nc">NumberCruncher</span><span class="p">()</span>
+    
+    <span class="nd">@Test</span>
+    <span class="k">fun</span> <span class="nf">test</span><span class="p">()</span> <span class="p">{</span>
+        <span class="n">numberCruncher</span><span class="p">.</span><span class="nf">getResult</span><span class="p">()</span> <span class="c1">// ❌ won't compile</span>
+    <span class="p">}</span>
+    
+<span class="p">}</span>
+</code></pre></div></div>
+
+<p>The compiler won’t let us call <code class="language-plaintext highlighter-rouge">numberCruncher.getResult()</code> like this since it is a <code class="language-plaintext highlighter-rouge">suspend</code> function, meaning it can only be called from a coroutine.</p>
+
+<h2 id="attempt-2-launching-a-coroutine-from-the-test-">Attempt 2, launching a coroutine from the test ❌</h2>
+
+<div class="language-kotlin highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="nd">@Test</span>
+<span class="k">fun</span> <span class="nf">test</span><span class="p">()</span> <span class="p">{</span>
+    <span class="nc">GlobalScope</span><span class="p">.</span><span class="nf">launch</span> <span class="p">{</span>
+        <span class="nf">assertEquals</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">numberCruncher</span><span class="p">.</span><span class="nf">getResult</span><span class="p">())</span>
+    <span class="p">}</span>
+<span class="p">}</span>
+</code></pre></div></div>
+
+<p>If you try launching a new coroutine inside your test like this, you might be pleased to see the test passing. However, <strong>this isn’t working at all</strong>, and if you were to change that assertion to expect any other value, the test would continue to pass. This is because the test is finished before the calculation can finish, and before the new coroutine can even start.</p>
+
+<p>💡 This is why you should always start with a failing test, then make it pass.</p>
+
+<h2 id="attempt-3-using-runblocking-">Attempt 3, using <code class="language-plaintext highlighter-rouge">runBlocking</code> ❌</h2>
+<div class="language-kotlin highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="nd">@Test</span>
+<span class="k">fun</span> <span class="nf">test</span><span class="p">()</span> <span class="p">=</span> <span class="nf">runBlocking</span> <span class="p">{</span> 
+    <span class="nf">assertEquals</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">numberCruncher</span><span class="p">.</span><span class="nf">getResult</span><span class="p">())</span>
+<span class="p">}</span>
+</code></pre></div></div>
+
+<p>Previously, for testing coroutines, there were a few options including using <code class="language-plaintext highlighter-rouge">runBlocking</code>, and <code class="language-plaintext highlighter-rouge">runBlockingTest</code>. However promising these seemed, there were always scenarios where they didn’t work as expected or were error-prone. In a <a href="https://craigrussell.io/2019/11/unit-testing-coroutine-suspend-functions-using-testcoroutinedispatcher/">blog post</a> I wrote about this a few years back, I noted a scenario where <code class="language-plaintext highlighter-rouge">runBlockingTest</code> should have worked, including linking to a long-running <a href="https://github.com/Kotlin/kotlinx.coroutines/issues/1204">PR</a> which promised a fix was coming. However, it never did. Instead, that PR was closed off in favor of the new coroutine testing tooling.</p>
+
+<p>In short, this isn’t the solution you’re looking for either. It might work in some cases and confusingly not work in others. However, don’t despair, help is at hand.</p>
+
+<h2 id="attempt-4-using-runtest-">Attempt 4, using <code class="language-plaintext highlighter-rouge">runTest</code> ✅</h2>
+<p>As promised, the latest coroutine testing tooling offers a solution with the introduction of a new coroutine builder specifically to be used in tests, called <a href="https://kotlin.github.io/kotlinx.coroutines/kotlinx-coroutines-test/kotlinx.coroutines.test/run-test.html"><code class="language-plaintext highlighter-rouge">runTest</code></a>.</p>
+
+<div class="language-kotlin highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="nd">@Test</span>
+<span class="k">fun</span> <span class="nf">test</span><span class="p">()</span> <span class="p">=</span> <span class="nf">runTest</span> <span class="p">{</span> 
+    <span class="nf">assertEquals</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">numberCruncher</span><span class="p">.</span><span class="nf">getResult</span><span class="p">())</span>
+<span class="p">}</span>
+</code></pre></div></div>
+
+<p>🎉 This time, we have success. The <code class="language-plaintext highlighter-rouge">runTest</code> coroutine builder means you can test your code which calls <code class="language-plaintext highlighter-rouge">suspend</code> functions, and doesn’t come with the same problems that its predecessor <code class="language-plaintext highlighter-rouge">runBlockingTest</code> had.</p>
+
+<h1 id="writing-a-unit-test-for-code-that-launches-new-coroutines-under-the-hood">Writing a unit test for code that launches new coroutines under the hood</h1>
+<p>In the above example, our <code class="language-plaintext highlighter-rouge">NumberCruncher</code> exposed a <code class="language-plaintext highlighter-rouge">suspend</code> function. However sometimes you will be trying to test code that internally launches new coroutines.</p>
+
+<div class="language-kotlin highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="c1">// 👇 We pass a `CoroutineScope` in to the constructor now to let us launch new coroutines</span>
+<span class="kd">class</span> <span class="nc">NumberCruncher</span><span class="p">(</span><span class="k">private</span> <span class="kd">val</span> <span class="py">coroutineScope</span><span class="p">:</span> <span class="nc">CoroutineScope</span><span class="p">)</span> <span class="p">{</span>
+
+    <span class="c1">// 👇 We have a `SharedFlow` of results now.</span>
+    <span class="k">private</span> <span class="kd">val</span> <span class="py">_results</span> <span class="p">=</span> <span class="nc">MutableSharedFlow</span><span class="p">&lt;</span><span class="nc">Int</span><span class="p">&gt;()</span>
+    <span class="k">fun</span> <span class="nf">results</span><span class="p">()</span> <span class="p">=</span> <span class="n">_results</span><span class="p">.</span><span class="nf">asSharedFlow</span><span class="p">()</span>
+
+    <span class="c1">// 👇 We now allow a new result to be requested, but it isn't returned immediately.</span>
+    <span class="k">fun</span> <span class="nf">calculate</span><span class="p">()</span> <span class="p">{</span>
+
+        <span class="c1">// 👇 we have a `launch` in here now, where we had a `withContext` before</span>
+        <span class="n">coroutineScope</span><span class="p">.</span><span class="nf">launch</span><span class="p">(</span><span class="nc">Dispatchers</span><span class="p">.</span><span class="nc">Default</span><span class="p">)</span> <span class="p">{</span>
+            <span class="kd">val</span> <span class="py">result</span> <span class="p">=</span> <span class="nf">longRunningOperation</span><span class="p">()</span>
+
+            <span class="c1">// We've added a 5s delay here to make testing even harder. </span>
+            <span class="c1">// 👇 Ideally, production code would respect this delay, but unit tests would not it will slow down your test suite.</span>
+            <span class="nf">delay</span><span class="p">(</span><span class="mi">5_000</span><span class="p">)</span>
+
+            <span class="n">_results</span><span class="p">.</span><span class="nf">emit</span><span class="p">(</span><span class="n">result</span><span class="p">)</span>
+        <span class="p">}</span>
+    <span class="p">}</span>
+    
+    <span class="c1">// unchanged</span>
+    <span class="k">private</span> <span class="k">fun</span> <span class="nf">longRunningOperation</span><span class="p">():</span> <span class="nc">Int</span> <span class="p">{</span><span class="o">..</span><span class="p">.}</span>
+<span class="p">}</span>
+</code></pre></div></div>
+<p>We’ve made our code more reactive, since reactive code is in fashion 👔. Before, we could call <code class="language-plaintext highlighter-rouge">getResult()</code> and wait for the result to be returned. Now, we can request a new result be calculated but it won’t be returned there and then; instead, it will be emitted from a <code class="language-plaintext highlighter-rouge">Flow</code> shortly afterwards when it’s calculated.</p>
+
+<p>Testing this kind of code is harder than before. Because this code internally calls <code class="language-plaintext highlighter-rouge">launch</code> to create a new coroutine (and doesn’t expose the <code class="language-plaintext highlighter-rouge">Job</code> externally) ensuring the logic is executed while the unit test is running is important. We don’t want to hit the problem from before when the unit test completes before the coroutine has been launched, as we aren’t testing what we think we are testing if that happens.</p>
+
+<h2 id="attempt-1-testing-this-code-using-only-runtest-">Attempt 1, testing this code using only <code class="language-plaintext highlighter-rouge">runTest</code> ❌</h2>
+
+<div class="language-kotlin highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="nd">@Test</span>
+<span class="k">fun</span> <span class="nf">test</span><span class="p">()</span> <span class="p">=</span> <span class="nf">runTest</span> <span class="p">{</span>
+    <span class="kd">val</span> <span class="py">numberCruncher</span> <span class="p">=</span> <span class="nc">NumberCruncher</span><span class="p">(</span><span class="k">this</span><span class="p">)</span>
+    <span class="n">numberCruncher</span><span class="p">.</span><span class="nf">calculate</span><span class="p">()</span>
+    <span class="nf">assertEquals</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">numberCruncher</span><span class="p">.</span><span class="nf">results</span><span class="p">().</span><span class="nf">first</span><span class="p">())</span>
+<span class="p">}</span>
+</code></pre></div></div>
+
+<p>This looks like it should work, and indeed running it you’ll find the test passing, but it will take a while. The reason it’s so slow is because that <code class="language-plaintext highlighter-rouge">delay(5_000)</code> we added is being respected even in the unit test. Why isn’t <code class="language-plaintext highlighter-rouge">runTest</code> doing what it claims to do in the docs: <em>“The calls to delay are automatically skipped”</em>? The answer is given in the docs in the section called <a href="https://github.com/Kotlin/kotlinx.coroutines/tree/master/kotlinx-coroutines-test#virtual-time-support-with-other-dispatchers">Virtual Time Support With Other Dispatchers</a>.</p>
+
+<blockquote>
+  <p>Calls to withContext(Dispatchers.IO), withContext(Dispatchers.Default), and withContext(Dispatchers.Main) are common in coroutines-based code bases. Unfortunately, just executing code in a test will not lead to these dispatchers using the virtual time source, so delays will not be skipped in them. Tests should, when possible, replace these dispatchers with a TestDispatcher.</p>
+</blockquote>
+
+<h2 id="injecting-coroutine-dispatchers">Injecting coroutine dispatchers</h2>
+<p>We need to <strong>stop hardcoding the dispatchers</strong> using code like <code class="language-plaintext highlighter-rouge">Dispatchers.Default</code> and instead provide a way to inject dispatchers into classes. One simple mechanism I use for this is to define a <code class="language-plaintext highlighter-rouge">DispatcherProvider</code> interface.</p>
+
+<div class="language-kotlin highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="kd">interface</span> <span class="nc">DispatcherProvider</span> <span class="p">{</span>
+
+    <span class="k">fun</span> <span class="nf">main</span><span class="p">():</span> <span class="nc">CoroutineDispatcher</span> <span class="p">=</span> <span class="nc">Dispatchers</span><span class="p">.</span><span class="nc">Main</span>
+    <span class="k">fun</span> <span class="nf">default</span><span class="p">():</span> <span class="nc">CoroutineDispatcher</span> <span class="p">=</span> <span class="nc">Dispatchers</span><span class="p">.</span><span class="nc">Default</span>
+    <span class="k">fun</span> <span class="nf">io</span><span class="p">():</span> <span class="nc">CoroutineDispatcher</span> <span class="p">=</span> <span class="nc">Dispatchers</span><span class="p">.</span><span class="nc">IO</span>
+    <span class="k">fun</span> <span class="nf">unconfined</span><span class="p">():</span> <span class="nc">CoroutineDispatcher</span> <span class="p">=</span> <span class="nc">Dispatchers</span><span class="p">.</span><span class="nc">Unconfined</span>
+
+<span class="p">}</span>
+
+<span class="kd">class</span> <span class="nc">DefaultDispatcherProvider</span> <span class="p">:</span> <span class="nc">DispatcherProvider</span>
+
+</code></pre></div></div>
+
+<p>This interface defines defaults for each of the main dispatchers you’ll already be familiar with, and also defines a ready-made class called <code class="language-plaintext highlighter-rouge">DefaultDispatcherProvider</code> for convenience. To use this, we pass a dispatcher provider into the constructor of a class, like this:</p>
+
+<div class="language-kotlin highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="kd">class</span> <span class="nc">NumberCruncher</span><span class="p">(</span><span class="k">private</span> <span class="kd">val</span> <span class="py">coroutineScope</span><span class="p">:</span> <span class="nc">CoroutineScope</span><span class="p">,</span>
+                     <span class="k">private</span> <span class="kd">val</span> <span class="py">dispatchers</span><span class="p">:</span> <span class="nc">DispatcherProvider</span> <span class="p">=</span> <span class="nc">DefaultDispatcherProvider</span><span class="p">())</span> <span class="p">{</span>
+    
+    <span class="o">..</span><span class="p">.</span>
+
+    <span class="k">fun</span> <span class="nf">calculate</span><span class="p">()</span> <span class="p">{</span>
+
+        <span class="c1">// 👇 we now use `dispatchers.default()` instead of hardcoding the dispatcher to `Dispatchers.Default'</span>
+        <span class="n">coroutineScope</span><span class="p">.</span><span class="nf">launch</span><span class="p">(</span><span class="n">dispatchers</span><span class="p">.</span><span class="nf">default</span><span class="p">())</span> <span class="p">{</span>
+            <span class="o">..</span><span class="p">.</span> 
+        <span class="p">}</span>
+<span class="p">}</span> 
+</code></pre></div></div>
+
+<p>In production code, the default parameter value is used, meaning you don’t have to explicitly provide it anywhere. But the value now is that while unit testing, you can provide an alternative version which uses a <code class="language-plaintext highlighter-rouge">TestDispatcher</code> instead of a real one. For convenience, some of the boilerplate required in each test can be encapsulated in a test rule.</p>
+
+<div class="language-kotlin highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="nd">@ExperimentalCoroutinesApi</span>
+<span class="kd">class</span> <span class="nc">CoroutineTestRule</span><span class="p">(</span><span class="kd">val</span> <span class="py">testDispatcher</span><span class="p">:</span> <span class="nc">TestDispatcher</span> <span class="p">=</span> <span class="nc">UnconfinedTestDispatcher</span><span class="p">(</span><span class="nc">TestCoroutineScheduler</span><span class="p">()))</span> <span class="p">:</span> <span class="nc">TestWatcher</span><span class="p">()</span> <span class="p">{</span>
+
+    <span class="kd">val</span> <span class="py">testDispatcherProvider</span> <span class="p">=</span> <span class="kd">object</span> <span class="err">: </span><span class="nc">DispatcherProvider</span> <span class="p">{</span>
+        <span class="k">override</span> <span class="k">fun</span> <span class="nf">default</span><span class="p">():</span> <span class="nc">CoroutineDispatcher</span> <span class="p">=</span> <span class="n">testDispatcher</span>
+        <span class="k">override</span> <span class="k">fun</span> <span class="nf">io</span><span class="p">():</span> <span class="nc">CoroutineDispatcher</span> <span class="p">=</span> <span class="n">testDispatcher</span>
+        <span class="k">override</span> <span class="k">fun</span> <span class="nf">main</span><span class="p">():</span> <span class="nc">CoroutineDispatcher</span> <span class="p">=</span> <span class="n">testDispatcher</span>
+        <span class="k">override</span> <span class="k">fun</span> <span class="nf">unconfined</span><span class="p">():</span> <span class="nc">CoroutineDispatcher</span> <span class="p">=</span> <span class="n">testDispatcher</span>
+    <span class="p">}</span>
+
+    <span class="k">override</span> <span class="k">fun</span> <span class="nf">starting</span><span class="p">(</span><span class="n">description</span><span class="p">:</span> <span class="nc">Description</span><span class="p">?)</span> <span class="p">{</span>
+        <span class="k">super</span><span class="p">.</span><span class="nf">starting</span><span class="p">(</span><span class="n">description</span><span class="p">)</span>
+        <span class="nc">Dispatchers</span><span class="p">.</span><span class="nf">setMain</span><span class="p">(</span><span class="n">testDispatcher</span><span class="p">)</span>
+    <span class="p">}</span>
+
+    <span class="k">override</span> <span class="k">fun</span> <span class="nf">finished</span><span class="p">(</span><span class="n">description</span><span class="p">:</span> <span class="nc">Description</span><span class="p">?)</span> <span class="p">{</span>
+        <span class="k">super</span><span class="p">.</span><span class="nf">finished</span><span class="p">(</span><span class="n">description</span><span class="p">)</span>
+        <span class="nc">Dispatchers</span><span class="p">.</span><span class="nf">resetMain</span><span class="p">()</span>
+    <span class="p">}</span>
+<span class="p">}</span>
+</code></pre></div></div>
+
+<p>Now, you can apply that test rule and use its test dispatcher provider when creating your class under test.</p>
+
+<h1 id="final-working-attempt-using-runtest-and-providing-test-dispatchers-">Final working attempt, using <code class="language-plaintext highlighter-rouge">runTest</code>, and providing test dispatchers ✅</h1>
+
+<p>Let’s summarise what we have done:</p>
+<ol>
+  <li>Used <code class="language-plaintext highlighter-rouge">runTest</code> to create a coroutine to be used while unit testing</li>
+  <li>Used the coroutine scope provided by <code class="language-plaintext highlighter-rouge">runTest</code> by passing it to the class that launches a new coroutine</li>
+  <li>Provided alternative coroutine dispatchers while testing</li>
+  <li>Created a coroutine test rule to hold some boilerplate</li>
+</ol>
+
+<div class="language-kotlin highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="kd">class</span> <span class="nc">NumberCruncher</span><span class="p">(</span><span class="k">private</span> <span class="kd">val</span> <span class="py">coroutineScope</span><span class="p">:</span> <span class="nc">CoroutineScope</span><span class="p">,</span>
+                     <span class="k">private</span> <span class="kd">val</span> <span class="py">dispatchers</span><span class="p">:</span> <span class="nc">DispatcherProvider</span> <span class="p">=</span> <span class="nc">DefaultDispatcherProvider</span><span class="p">())</span> <span class="p">{</span>
+
+    <span class="k">private</span> <span class="kd">val</span> <span class="py">_results</span> <span class="p">=</span> <span class="nc">MutableSharedFlow</span><span class="p">&lt;</span><span class="nc">Int</span><span class="p">&gt;()</span>
+    <span class="k">fun</span> <span class="nf">results</span><span class="p">()</span> <span class="p">=</span> <span class="n">_results</span><span class="p">.</span><span class="nf">asSharedFlow</span><span class="p">()</span>
+
+    <span class="k">fun</span> <span class="nf">calculate</span><span class="p">()</span> <span class="p">{</span>
+
+        <span class="c1">// 👇 using dispatcher provider avoids hardcoding dispatcher, allowing for us to use a `TestDispatcher` while testing</span>
+        <span class="n">coroutineScope</span><span class="p">.</span><span class="nf">launch</span><span class="p">(</span><span class="n">dispatchers</span><span class="p">.</span><span class="nf">default</span><span class="p">())</span> <span class="p">{</span>
+            <span class="kd">val</span> <span class="py">result</span> <span class="p">=</span> <span class="nf">longRunningOperation</span><span class="p">()</span>
+            <span class="nf">delay</span><span class="p">(</span><span class="mi">5_000</span><span class="p">)</span>
+            <span class="n">_results</span><span class="p">.</span><span class="nf">emit</span><span class="p">(</span><span class="n">result</span><span class="p">)</span>
+        <span class="p">}</span>
+    <span class="p">}</span>
+
+    <span class="k">private</span> <span class="k">fun</span> <span class="nf">longRunningOperation</span><span class="p">():</span> <span class="nc">Int</span> <span class="p">{</span>
+        <span class="kd">val</span> <span class="py">list</span> <span class="p">=</span> <span class="n">mutableListOf</span><span class="p">&lt;</span><span class="nc">Int</span><span class="p">&gt;()</span>
+
+        <span class="k">for</span> <span class="p">(</span><span class="n">i</span> <span class="k">in</span> <span class="mi">0</span><span class="o">..</span><span class="mi">1_000</span><span class="p">)</span> <span class="p">{</span>
+            <span class="n">list</span><span class="p">.</span><span class="nf">add</span><span class="p">(</span><span class="n">i</span><span class="p">)</span>
+        <span class="p">}</span>
+        <span class="k">for</span> <span class="p">(</span><span class="n">i</span> <span class="k">in</span> <span class="mi">0</span><span class="o">..</span><span class="mi">20_000</span><span class="p">)</span> <span class="p">{</span>
+            <span class="n">list</span><span class="p">.</span><span class="nf">shuffle</span><span class="p">()</span>
+            <span class="n">list</span><span class="p">.</span><span class="nf">sort</span><span class="p">()</span>
+        <span class="p">}</span>
+
+        <span class="k">return</span> <span class="n">list</span><span class="p">.</span><span class="nf">first</span><span class="p">()</span>
+    <span class="p">}</span>
+<span class="p">}</span>
+</code></pre></div></div>
+
+<div class="language-kotlin highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="err">@</span><span class="k">get</span><span class="p">:</span><span class="nc">Rule</span>
+<span class="kd">val</span> <span class="py">coroutineTestRule</span><span class="p">:</span> <span class="nc">CoroutineTestRule</span> <span class="p">=</span> <span class="nc">CoroutineTestRule</span><span class="p">()</span>
+
+<span class="nd">@Test</span>
+<span class="k">fun</span> <span class="nf">test</span><span class="p">()</span> <span class="p">=</span> <span class="nf">runTest</span> <span class="p">{</span>
+    <span class="kd">val</span> <span class="py">numberCruncher</span> <span class="p">=</span> <span class="nc">NumberCruncher</span><span class="p">(</span><span class="k">this</span><span class="p">,</span> <span class="n">coroutineTestRule</span><span class="p">.</span><span class="n">testDispatcherProvider</span><span class="p">)</span>
+    <span class="n">numberCruncher</span><span class="p">.</span><span class="nf">calculate</span><span class="p">()</span>
+    <span class="nf">assertEquals</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">numberCruncher</span><span class="p">.</span><span class="nf">results</span><span class="p">().</span><span class="nf">first</span><span class="p">())</span> 
+<span class="p">}</span>
+</code></pre></div></div>
+
+<p>This test passes, and passes quickly as it now rightfully skips the <code class="language-plaintext highlighter-rouge">delay()</code>.</p>
+
+<h3 id="further-reading">Further reading</h3>
+<p>ℹ️ The new tooling offers lots of control over execution of coroutines which isn’t covered in this post. For more details on that if required, you should check out the javadocs for <code class="language-plaintext highlighter-rouge">UnconfinedTestDispatcher</code> and <code class="language-plaintext highlighter-rouge">StandardTestDispatcher</code>, along with functions available inside of the <code class="language-plaintext highlighter-rouge">runTest</code> block to <a href="https://github.com/Kotlin/kotlinx.coroutines/tree/master/kotlinx-coroutines-test#controlling-the-virtual-time">control virtual time</a>.</p>
+
+
+
+<a href='https://cdrussell.github.io//'>Home</a>
+
+
+      </section>
+    </div>
+    <footer>
+    </footer>
+    <!--[if !IE]><script>fixScale(document);</script><![endif]-->
+  </body>
+</html>
